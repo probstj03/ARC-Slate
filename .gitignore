@@ -27,3 +27,9 @@ Thumbs.db
 *-backups/
 *.lck
 fp-info-cache
+
+# IDE
+.idea/
+
+# Überbleibsel des alten READ ARC (jetzt in ARC-Server/server/readarc)
+software_old/
