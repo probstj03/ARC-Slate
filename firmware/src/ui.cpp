@@ -1,9 +1,9 @@
 #include "ui.h"
 #include "clap.h"
 #include "epaper.h"
-#include "ltc_engine.h"
+#include <ArcCore.h>
 #include "matrix.h"
-#include "net.h"
+#include "slate_link.h"
 #include "pins.h"
 #include "state.h"
 
@@ -44,9 +44,11 @@ const char* const kItemNames[IT_COUNT] = {"Take", "Shot", "Szene", "Roll", "Kame
                                           "Bildrate", "Helligkeit", "Blitz testen", "Info", "Fertig"};
 const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "HELL", "", "", ""};
 
-const SystemMode kModes[] = {MODE_GEN_FREE_RUN, MODE_GEN_RECORD_RUN, MODE_JAM_SYNC_FREE_RUN, MODE_JAM_SYNC_RECORD_RUN, MODE_SLAVE};
+using arc::engine::Mode;
+using arc::TcRate;
+const Mode kModes[] = {Mode::FreeRun, Mode::RecordRun, Mode::JamFree, Mode::JamRec, Mode::Slave};
 const char* const kModeNames[] = {"Free Run", "Record Run", "Jam -> Free", "Jam -> Rec", "Slave"};
-const TcRate kRates[] = {RATE_24, RATE_25, RATE_2997DF, RATE_30};
+const TcRate kRates[] = {TcRate::R24, TcRate::R25, TcRate::R2997DF, TcRate::R30};
 const char* const kRateNames[] = {"24", "25", "29.97 DF", "30"};
 
 enum UiState { UI_IDLE, UI_MENU, UI_EDIT };
@@ -61,7 +63,7 @@ int s_pendingIndex = 0;
 ShotInfo s_backupShot;
 uint8_t s_backupBright = 8;
 
-int indexOfMode(SystemMode m) {
+int indexOfMode(Mode m) {
     for (int i = 0; i < 5; i++) if (kModes[i] == m) return i;
     return 0;
 }
@@ -82,12 +84,12 @@ String valueText(int item) {
         case IT_ROLL:  snprintf(buf, sizeof(buf), "%c%03d", s.cam, s.rollNum); break;
         case IT_CAM:   snprintf(buf, sizeof(buf), "%c", s.cam); break;
         case IT_BRIGHT: snprintf(buf, sizeof(buf), "%u", st.brightness); break;
-        case IT_INFO:  snprintf(buf, sizeof(buf), "%s", net::ipString().c_str()); break;
+        case IT_INFO:  snprintf(buf, sizeof(buf), "%s", arc::net::ipString().c_str()); break;
         default: buf[0] = 0;
     }
     state::unlock();
-    if (item == IT_MODE) return (s_ui == UI_EDIT && s_sel == IT_MODE) ? kModeNames[s_pendingIndex] : kModeNames[indexOfMode(ltc::mode())];
-    if (item == IT_RATE) return (s_ui == UI_EDIT && s_sel == IT_RATE) ? kRateNames[s_pendingIndex] : kRateNames[indexOfRate(ltc::rate())];
+    if (item == IT_MODE) return (s_ui == UI_EDIT && s_sel == IT_MODE) ? kModeNames[s_pendingIndex] : kModeNames[indexOfMode(arc::engine::mode())];
+    if (item == IT_RATE) return (s_ui == UI_EDIT && s_sel == IT_RATE) ? kRateNames[s_pendingIndex] : kRateNames[indexOfRate(arc::engine::rate())];
     return String(buf);
 }
 
@@ -160,8 +162,8 @@ void stepValue(int item, int delta) {
     state::touch();
     state::unlock();
     if (userBits) {
-        ltc::refreshUserBits();
-        net::sendSlateState();
+        slate::updateUserBits();
+        slate::sendSlateState();
         s_cardDueMs = millis() + 1500;
     }
 }
@@ -185,9 +187,9 @@ void onTurn(int steps) {
         s_pendingIndex = ((s_pendingIndex + steps) % 5 + 5) % 5;
     } else if (s_sel == IT_RATE) {
         s_pendingIndex = ((s_pendingIndex + steps) % 4 + 4) % 4;
-    } else if (s_sel == IT_SHOT && net::studioConnected()) {
+    } else if (s_sel == IT_SHOT && arc::net::studioConnected()) {
         // ARC-Studio owns the shot list: ask it for the neighbouring shot.
-        net::requestShotStep(steps > 0 ? 1 : -1);
+        slate::requestShotStep(steps > 0 ? 1 : -1);
     } else {
         stepValue(s_sel, steps);
     }
@@ -201,8 +203,8 @@ void onShortPress() {
             case IT_DONE: closeMenu(); return;
             case IT_FLASH: clap::testFlash(); return;
             case IT_INFO: epd::requestStatus(); return;
-            case IT_MODE: s_pendingIndex = indexOfMode(ltc::mode()); break;
-            case IT_RATE: s_pendingIndex = indexOfRate(ltc::rate()); break;
+            case IT_MODE: s_pendingIndex = indexOfMode(arc::engine::mode()); break;
+            case IT_RATE: s_pendingIndex = indexOfRate(arc::engine::rate()); break;
             default: break;
         }
         state::lock();
@@ -214,21 +216,22 @@ void onShortPress() {
         return;
     }
     // UI_EDIT: apply
-    if (s_sel == IT_MODE) ltc::requestMode(kModes[s_pendingIndex]);
-    if (s_sel == IT_RATE) ltc::setRate(kRates[s_pendingIndex]);
+    if (s_sel == IT_MODE) arc::engine::requestMode(kModes[s_pendingIndex]);
+    if (s_sel == IT_RATE) arc::engine::setRate(kRates[s_pendingIndex]);
     s_ui = UI_MENU;
     renderMenu();
 }
 
 void onLongPress() {
     if (s_ui == UI_IDLE) {
-        if (ltc::muteHeld()) {
-            ltc::releaseMuteHold();
+        if (arc::engine::jam().muteHeld) {
+            arc::engine::confirmUnplug();
             mtx::showOverlay("TC AUS J2", 1500);
-            net::broadcastStatus();
-        } else if (ltc::mode() == MODE_GEN_RECORD_RUN) {
-            if (ltc::running()) ltc::stop(); else ltc::start();
-            mtx::showOverlay(ltc::running() ? "REC" : "STOP", 1000);
+            arc::net::broadcastStatus();
+        } else if (arc::engine::mode() == Mode::RecordRun) {
+            const bool run = !arc::engine::running();
+            if (run) arc::engine::start(); else arc::engine::stop();
+            mtx::showOverlay(run ? "REC" : "STOP", 1000);
         }
         return;
     }
@@ -240,7 +243,7 @@ void onLongPress() {
     state::touch();
     state::unlock();
     mtx::setBrightness(s_backupBright);
-    ltc::refreshUserBits();
+    slate::updateUserBits();
     s_ui = UI_MENU;
     renderMenu();
 }

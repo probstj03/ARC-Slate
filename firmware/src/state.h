@@ -29,7 +29,6 @@ struct Settings {
     bool    sqwEdgeKnown    = false; // DS3231 second edge auto-detected?
     bool    sqwFalling      = true;  // true: falling SQW edge marks the second change
     int32_t flashLatencyUs  = 0;     // delay hall edge -> LED fully on (calibrate)
-    int32_t ltcOutLatencyUs = 0;     // generator -> J2 output delay (calibrate)
     bool    encReverse      = false; // swap encoder direction
 };
 

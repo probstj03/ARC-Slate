@@ -1,21 +1,18 @@
 #include "clap.h"
+#include <ArcCore.h>
 #include <ArduinoJson.h>
-#include <LittleFS.h>
 #include <driver/gpio.h>
 #include <esp_timer.h>
-#include "arc_clock.h"
 #include "epaper.h"
-#include "ltc_engine.h"
 #include "matrix.h"
-#include "net.h"
 #include "pins.h"
+#include "slate_link.h"
 #include "state.h"
 #include "ui.h"
 
 namespace {
 
 constexpr int64_t DEBOUNCE_US = 30000;
-constexpr size_t LOG_MAX_BYTES = 256 * 1024;
 
 struct ClapEvent {
     bool closing;
@@ -29,7 +26,6 @@ volatile int64_t s_lastEdgeUs = 0;
 volatile bool s_armed = true;          // false while the menu is open
 volatile int64_t s_flashUs = 40000;    // one frame
 volatile uint32_t s_events = 0;
-uint32_t s_seq = 0;
 
 void flashOffCb(void*) { gpio_set_level((gpio_num_t)PIN_FLASH, 0); }
 
@@ -47,58 +43,51 @@ void IRAM_ATTR isrHall() {
     if (woken) portYIELD_FROM_ISR();
 }
 
-void appendLog(JsonDocument& doc) {
-    if (LittleFS.exists("/events.jsonl")) {
-        File f = LittleFS.open("/events.jsonl", "r");
-        const size_t size = f ? f.size() : 0;
-        if (f) f.close();
-        if (size > LOG_MAX_BYTES) {
-            LittleFS.remove("/events.old.jsonl");
-            LittleFS.rename("/events.jsonl", "/events.old.jsonl");
-        }
-    }
-    File f = LittleFS.open("/events.jsonl", "a");
-    if (!f) return;
-    serializeJson(doc, f);
-    f.print('\n');
-    f.close();
+// Switches the flash off one frame after `onEspUs` (esp_timer, task context).
+void scheduleFlashOff(int64_t onEspUs) {
+    int64_t remaining = s_flashUs - (esp_timer_get_time() - onEspUs);
+    if (remaining < 1) remaining = 1;
+    esp_timer_stop(s_flashOff);
+    esp_timer_start_once(s_flashOff, remaining);
 }
 
 void handleClose(int64_t espUs) {
-    int32_t flashLatency;
     state::lock();
-    flashLatency = state::settings().flashLatencyUs;
+    const int32_t flashLatency = state::settings().flashLatencyUs;
     const ShotInfo s = state::shot();
     state::unlock();
     const String roll = state::rollString();
 
-    const int64_t rtcUs = arcclock::nowUs() - (esp_timer_get_time() - espUs);
-    uint32_t subUs = 0;
-    const Timecode tc = ltc::timecodeAt(espUs, subUs);
-    const String tcStr = ltc::tcToString(tc);
-    const DateTime d = DateTime((uint32_t)(rtcUs / 1000000LL));
+    // Clap moment on the device time base (RTC wall clock) and on the TC timeline.
+    const int64_t wallNs = arc::clock::wallNsAtEsp(espUs);
+    int64_t intoNs = 0;
+    const arc::Timecode tc = arc::engine::timecodeAt(wallNs, intoNs);
+    char tcStr[12];
+    arc::formatTc(tc, tcStr);
+    const DateTime d((uint32_t)(wallNs / 1000000000LL));
     char date[12], ub[9];
     snprintf(date, sizeof(date), "%02d.%02d.%04d", d.day(), d.month(), d.year());
-    snprintf(ub, sizeof(ub), "%08lX", (unsigned long)ltc::txUserBits());
+    snprintf(ub, sizeof(ub), "%08lX", (unsigned long)arc::engine::txUserBits());
 
-    // Protocol v2 event (RTC time in µs, TC + position inside the frame)
     JsonDocument ev;
     ev["type"] = "event";
     ev["kind"] = "clap_close";
     ev["device"] = "slate";
-    ev["id"] = ++s_seq;
-    ev["rtcUs"] = rtcUs;
-    ev["flashUs"] = rtcUs + flashLatency;
+    ev["deviceId"] = arc::net::deviceId();
+    ev["id"] = arc::events::nextId();
+    ev["rtcUs"] = wallNs / 1000;
+    ev["flashUs"] = wallNs / 1000 + flashLatency;
     ev["tc"] = tcStr;
-    ev["subframeUs"] = subUs;
-    ev["fps"] = ltc::rateKey();
+    ev["subframeUs"] = (int32_t)(intoNs / 1000);
+    ev["fps"] = arc::rateKey(arc::engine::rate());
     ev["scene"] = s.scene;
     ev["shot"] = s.shot;
     ev["take"] = s.take;
     ev["roll"] = roll;
+    ev["code"] = s.code;
     ev["userbit"] = ub;
-    net::send(ev);
-    appendLog(ev);
+    arc::net::send(ev);
+    arc::events::append(ev);
 
     // Legacy message understood by the current ARC-Studio (adds the take).
     JsonDocument legacy;
@@ -108,11 +97,11 @@ void handleClose(int64_t espUs) {
     legacy["roll"] = roll;
     legacy["date"] = date;
     legacy["userbit"] = ub;
-    net::send(legacy);
+    arc::net::send(legacy);
 
     mtx::showOverlay(tcStr, 2500);   // hold the clap timecode on the LEDs
     s_events++;
-    Serial.printf("[CLAP] zu  TC %s +%lu us  Take %d\n", tcStr.c_str(), (unsigned long)subUs, s.take);
+    Serial.printf("[CLAP] zu  TC %s +%ld us  Take %d\n", tcStr, (long)(intoNs / 1000), s.take);
 }
 
 void handleOpen(int64_t espUs) {
@@ -120,30 +109,24 @@ void handleOpen(int64_t espUs) {
     ShotInfo& s = state::shot();
     if (s.take < 99) s.take++;
     const int take = s.take;
+    s.loaded = true;
     state::touch();
     state::unlock();
-    ltc::refreshUserBits();
-    net::sendSlateState();
+    slate::updateUserBits();
+    slate::sendSlateState();
     epd::requestCard();   // QR code of the next take
 
     JsonDocument ev;
     ev["type"] = "event";
     ev["kind"] = "clap_open";
     ev["device"] = "slate";
-    ev["id"] = ++s_seq;
-    ev["rtcUs"] = arcclock::nowUs() - (esp_timer_get_time() - espUs);
+    ev["deviceId"] = arc::net::deviceId();
+    ev["id"] = arc::events::nextId();
+    ev["rtcUs"] = arc::clock::wallNsAtEsp(espUs) / 1000;
     ev["take"] = take;
-    net::send(ev);
-    appendLog(ev);
+    arc::net::send(ev);
+    arc::events::append(ev);
     Serial.printf("[CLAP] auf -> Take %d\n", take);
-}
-
-// Switches the flash off one frame after `onEspUs` (esp_timer, task context).
-void scheduleFlashOff(int64_t onEspUs) {
-    int64_t remaining = s_flashUs - (esp_timer_get_time() - onEspUs);
-    if (remaining < 1) remaining = 1;
-    esp_timer_stop(s_flashOff);
-    esp_timer_start_once(s_flashOff, remaining);
 }
 
 void clapTask(void*) {
@@ -151,13 +134,13 @@ void clapTask(void*) {
     for (;;) {
         // The flash must not fire while the menu is in use.
         s_armed = !ui::menuOpen();
-        s_flashUs = (int64_t)(1000000.0f / ltc::fps());
+        s_flashUs = (int64_t)(1000000.0 / arc::realFps(arc::engine::rate()));
         if (!xQueueReceive(s_queue, &ev, pdMS_TO_TICKS(50))) continue;
         if (ev.closing) {
             if (s_armed) { scheduleFlashOff(ev.espUs); handleClose(ev.espUs); }
             else digitalWrite(PIN_FLASH, LOW);
-        } else {
-            if (s_armed) handleOpen(ev.espUs);
+        } else if (s_armed) {
+            handleOpen(ev.espUs);
         }
     }
 }

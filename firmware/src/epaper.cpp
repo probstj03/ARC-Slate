@@ -7,7 +7,7 @@
 #include <Fonts/FreeSansBold24pt7b.h>
 #include <Fonts/FreeSansOblique18pt7b.h>
 #include <qrcode.h>   // ESP-IDF esp_qrcode
-#include "arc_clock.h"
+#include <ArcCore.h>
 #include "assets/bootscreen.h"
 #include "assets/logo.h"
 #include "pins.h"
@@ -88,7 +88,7 @@ void drawStatus() {
 void drawLeftColumn(const ShotInfo& s) {
     const char* labels[] = {"PRODUCTION:", "DIRECTOR:", "CAMERA:", "DATE:"};
     char date[16];
-    const DateTime now = arcclock::now();
+    const DateTime now = arc::clock::now();
     snprintf(date, sizeof(date), "%02d.%02d.%04d", now.day(), now.month(), now.year());
     const String values[] = {s.production, s.director, s.camera, String(date)};
     for (int i = 0; i < 4; i++) {

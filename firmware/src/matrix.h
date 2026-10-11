@@ -5,7 +5,6 @@
 // Module 0 of a chain is the one closest to the board (data input).
 // No LedControl: its 8-modules-per-chain limit does not apply here.
 #include <Arduino.h>
-#include "ltc_engine.h"
 
 namespace mtx {
 

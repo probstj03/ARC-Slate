@@ -1,4 +1,5 @@
 #include "matrix.h"
+#include <ArcCore.h>
 #include <SPI.h>
 #include "pins.h"
 #include "spi_bus.h"
@@ -170,7 +171,7 @@ void renderData() {
     renderField(ch, FIELD_SCENE_TAKE, sceneTake, true);
 }
 
-void renderTimecode(const Timecode& tc) {
+void renderTimecode(const arc::Timecode& tc) {
     char buf[12];
     snprintf(buf, sizeof(buf), "%02u:%02u:%02u:%02u", tc.h, tc.m, tc.s, tc.f);
     uint8_t cols[56];
@@ -204,7 +205,7 @@ void renderTest(uint8_t mode) {
 
 void displayTask(void*) {
     uint32_t lastRev = 0;
-    Timecode lastTc;
+    arc::Timecode lastTc;
     bool first = true;
     uint8_t lastTest = 0;
     for (;;) {
@@ -240,7 +241,7 @@ void displayTask(void*) {
             tcDirty = true;
             if (dataDirty) renderData();
         } else {
-            const Timecode tc = ltc::current();
+            const arc::Timecode tc = arc::engine::current();
             if (first || tc.f != lastTc.f || tc.s != lastTc.s || tc.m != lastTc.m || tc.h != lastTc.h) {
                 lastTc = tc;
                 renderTimecode(tc);

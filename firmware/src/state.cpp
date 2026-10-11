@@ -30,7 +30,6 @@ void load() {
     s_settings.sqwEdgeKnown    = s_prefs.getBool("sqwKnown", false);
     s_settings.sqwFalling      = s_prefs.getBool("sqwFall", true);
     s_settings.flashLatencyUs  = s_prefs.getInt("flashLat", 0);
-    s_settings.ltcOutLatencyUs = s_prefs.getInt("ltcLat", 0);
     s_settings.encReverse      = s_prefs.getBool("encRev", false);
     s_prefs.end();
 }
@@ -55,7 +54,6 @@ void save() {
     s_prefs.putBool("sqwKnown", s_settings.sqwEdgeKnown);
     s_prefs.putBool("sqwFall", s_settings.sqwFalling);
     s_prefs.putInt("flashLat", s_settings.flashLatencyUs);
-    s_prefs.putInt("ltcLat", s_settings.ltcOutLatencyUs);
     s_prefs.putBool("encRev", s_settings.encReverse);
     s_prefs.end();
 }

@@ -27,18 +27,18 @@ Zeitpunkt protokolliert die Slate mit Timecode. Gesteuert wird sie aus **ARC-Stu
 
 ## Firmware (v2.0.0-dev)
 
-PlatformIO-Projekt in `firmware/` (Arduino-Framework, ESP32-S3). Es ist modular aufgebaut, die
-Module sind so geschnitten, dass sie später nach ARC-Core wandern können.
+PlatformIO-Projekt in `firmware/` (Arduino-Framework, ESP32-S3). Zeitbasis, Timecode, Jam Sync und
+Netzwerk kommen aus **[ARC-Core](https://github.com/probstj03/ARC-Core)**. Das Repo muss neben
+`ARC-Slate` liegen, weil `platformio.ini` es per `symlink://../../ARC-Core` einbindet.
 
 | Modul | Aufgabe |
 |---|---|
-| `arc_clock` | RTC-disziplinierte µs-Uhr (DS3231-SQW-Flanke, misst selbst, welche Flanke den Sekundenwechsel markiert) |
-| `ltc_engine` | LTC-Generator (PCM5102 → J2), Decoder (J2 → GPIO4), Jam Sync |
+| ARC-Core | RTC-Uhr, phasengeregelter LTC-Generator, Decoder, Jam Sync mit Prüfphase, Latenz-Loopback, WLAN/ARC-Net, Protokoll v2, Ereignis-Log |
 | `matrix` | beide MAX7219-Ketten über Hardware-SPI, Layout-Tabelle für die 3×3-Anzeige |
 | `epaper` | Klappenkarte mit QR-Code (`ARC2\|code\|roll\|scene\|shot\|take`), Menü, Statuszeile |
 | `ui` | Drehencoder + Menü |
-| `clap` | Hallsensor, Blitz, Klappen-Ereignisse (RTC-µs, TC + Position im Frame), Log `/events.jsonl` |
-| `net` | bekannte WLANs (NVS), Rückfall „ARC-Net", mDNS `arc-slate`, WebSocket `/ws` |
+| `clap` | Hallsensor, Blitz, Klappen-Ereignisse (RTC-µs, TC + Position im Frame) |
+| `slate_link` | Slate-Protokoll: Shot-Daten, Slate-Zustand, Userbits |
 | `state` | Shot-Daten + Einstellungen im NVS |
 
 ```bash
@@ -89,12 +89,12 @@ pio device monitor -b 115200             # "help" zeigt alle Befehle
 
 ### Stand und Grenzen
 
-- **Timecode:** Free Run ist framegenau an die RTC gekoppelt. Jam Sync stellt die RTC anhand des
-  Frame-Zeitstempels auf Bruchteile einer Millisekunde genau. Noch offen (ARC-Core, nächste Phase):
-  - die Subframe-Phasenregelung des Generators (Einfügen/Weglassen einzelner Samples)
-  - die Prüfphase nach dem Jam
-  - die Kalibrierung der Ausgangslatenz per Loopback (`lat ltc` setzt sie vorerst manuell)
+- **Synchronität:** Der Generator ist auf ±0,75 Samples (≈16 µs) an die RTC-Zeitachse gekoppelt.
+  - Die Ausgangslatenz kalibriert sich selbst über J2 (Loopback). `?` zeigt Latenz, Phasenfehler und Slips.
+  - Jam Sync stellt die RTC per Frame-Zeitstempel und prüft danach 30 s lang Restversatz und Drift.
+    Dabei trimmt er das DS3231-Aging-Register.
+  - Noch nicht auf echter Hardware gemessen: Bitte Schritt 7 der Inbetriebnahme mit einem Stereo-Recorder
+    an beiden J2-Ausgängen prüfen.
 - **ARC-Studio:** Die aktuelle Version versteht `newTake` (wird beim Klappen zusätzlich gesendet),
-  `nextShot`/`previousShot` und `status`. Die neuen Nachrichten kommen in Teil H des Plans dazu:
-  - `hello`, `event` (µs-Zeitstempel), `slateState`, `pong`
-  - `wifi_config` (bekannte Netze vom Server)
+  `nextShot`/`previousShot` und `status`. Die neuen Nachrichten sind `hello`, `event`, `slateState`,
+  `pong`, `wifi_config_ack` sowie geplante Befehle mit `at`. ARC-Studio wertet sie mit Teil H des Plans aus.

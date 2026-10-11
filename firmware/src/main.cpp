@@ -1,37 +1,56 @@
 /*
  * ARC-Slate – electronic clapperboard on the ARC_AP board (ESP32-S3).
  *
- * Modules
- *   arc_clock   RTC-disciplined µs clock (DS3231 + SQW edge)
- *   ltc_engine  LTC generator / decoder / Jam Sync (PCM5102 + J2)
+ * ARC-Core (shared with ARC-Play): RTC wall clock, phase-locked LTC generator,
+ * decoder, Jam Sync, WiFi/ARC-Net, protocol v2, event log.
+ *
+ * Slate modules
  *   matrix      2 MAX7219 chains: timecode (7) and roll/shot/scene+take (9)
  *   epaper      7.5" e-ink: slate card with QR code, menu, status bar
  *   ui          rotary encoder + menu
  *   clap        hall sensor, sync flash, clap events
- *   net         WiFi / ARC-Net, mDNS, WebSocket to ARC-Studio
+ *   slate_link  slate protocol (shot data, slate state, user bits)
  *   state       shot data + settings (NVS)
  *
  * Pins: pins.h · Wiring: hardware/wiring/ARC-Slate_Verdrahtung.svg
  * Serial console: 115200 baud, "help" lists the commands.
  */
 #include <Arduino.h>
-#include <LittleFS.h>
+#include <ArcCore.h>
 #include <Wire.h>
-#include "arc_clock.h"
 #include "clap.h"
 #include "epaper.h"
-#include "ltc_engine.h"
 #include "matrix.h"
-#include "net.h"
+#include "pins.h"
+#include "slate_link.h"
 #include "spi_bus.h"
 #include "state.h"
 #include "ui.h"
 
+using arc::engine::Mode;
+using arc::TcRate;
+
 namespace {
 
 volatile bool s_statusChanged = false;
+void onEngineStatus() { s_statusChanged = true; }
 
-void onLtcStatus() { s_statusChanged = true; }
+void onJam(const arc::engine::JamStatus& j) {
+    JsonDocument ev;
+    ev["type"] = "event";
+    ev["kind"] = "jam";
+    ev["device"] = "slate";
+    ev["deviceId"] = arc::net::deviceId();
+    ev["id"] = arc::events::nextId();
+    ev["rtcUs"] = arc::clock::nowUs();
+    ev["ok"] = j.state == arc::engine::JamStatus::State::Done;
+    ev["residualUs"] = j.residualUs;
+    ev["ppm"] = j.ppm;
+    ev["aging"] = j.aging;
+    arc::net::send(ev);
+    arc::events::append(ev);
+    mtx::showOverlay("KABEL AB", 3000);
+}
 
 void printHelp() {
     Serial.println(
@@ -40,7 +59,7 @@ void printHelp() {
         "  1 2 4 5 6        Modus: Free Run, Record Run, Slave, Jam->Free, Jam->Rec\n"
         "  q w e r          Bildrate: 30, 25, 29.97 DF, 24\n"
         "  s / x            Start-Stop (Record Run) / Stop\n"
-        "  t | tc HH:MM:SS:FF   TC auf 0 / setzen\n"
+        "  t | tc HH:MM:SS:FF   TC auf 0 / setzen (Record Run)\n"
         "  u                Jam: Kabel abgezogen bestaetigen (TC-Ausgang wieder an)\n"
         "  n                NTP-Sync erzwingen\n"
         "  time YYYY-MM-DD HH:MM:SS   RTC stellen\n"
@@ -51,59 +70,70 @@ void printHelp() {
         "  enc / encrev     Encoder-Debug / Drehrichtung umkehren\n"
         "  i2c              I2C-Scan\n"
         "  take N | scene N | shot X | roll A001 | bright 0-15\n"
-        "  lat flash US | lat ltc US   Latenzen setzen (Mikrosekunden)\n"
+        "  lat flash US     Blitz-Latenz setzen (Mikrosekunden)\n"
         "  wifi | wifi add SSID PASS [PRIO] | wifi clear\n"
         "  log | log clear  Ereignis-Log anzeigen / loeschen\n");
 }
 
 void printStatus() {
-    const Timecode tc = ltc::current();
-    const DateTime d = arcclock::now();
+    const arc::Timecode tc = arc::engine::current();
+    char tcs[12];
+    arc::formatTc(tc, tcs);
+    const int64_t now = arc::clock::nowNs();
+    const DateTime d((uint32_t)(now / 1000000000LL));
     state::lock();
     const ShotInfo s = state::shot();
     const Settings st = state::settings();
     state::unlock();
-    Serial.printf("TC %s  Modus %s  %s fps  %s\n", ltc::tcToString(tc).c_str(), ltc::modeKey(), ltc::rateKey(),
-                  ltc::running() ? "läuft" : "steht");
-    Serial.printf("RTC %04d-%02d-%02d %02d:%02d:%02d.%06lu  SQW %s (%s)  RTC %s\n", d.year(), d.month(), d.day(),
-                  d.hour(), d.minute(), d.second(), (unsigned long)arcclock::usInSecond(),
-                  arcclock::sqwActive() ? "ok" : "FEHLT", st.sqwFalling ? "fallend" : "steigend",
-                  arcclock::rtcPresent() ? "ok" : "FEHLT");
+    const arc::engine::JamStatus j = arc::engine::jam();
+    Serial.printf("TC %s  Modus %s  %s fps  %s\n", tcs, arc::engine::modeKey(arc::engine::mode()),
+                  arc::rateKey(arc::engine::rate()), arc::engine::running() ? "läuft" : "steht");
+    Serial.printf("RTC %04d-%02d-%02d %02d:%02d:%02d.%06lu  SQW %s (%s)  Trim %lld us  ESP-µs/s %.1f  %.2f °C  Aging %d\n",
+                  d.year(), d.month(), d.day(), d.hour(), d.minute(), d.second(),
+                  (unsigned long)((now / 1000) % 1000000), arc::clock::sqwActive() ? "ok" : "FEHLT",
+                  st.sqwFalling ? "fallend" : "steigend", (long long)(arc::clock::trimNs() / 1000),
+                  arc::clock::espUsPerRtcSecond(), arc::clock::temperature(), (int)arc::clock::agingOffset());
+    Serial.printf("Ausgang: Latenz %.0f us %s, Phasenfehler %.1f us, Slips %lu, Neuausrichtungen %lu\n",
+                  arc::engine::outputLatencyUs(), arc::engine::latencyCalibrated() ? "(kalibriert)" : "(Standard)",
+                  arc::engine::phaseErrorUs(), (unsigned long)arc::engine::generator().slips(),
+                  (unsigned long)arc::engine::generator().realigns());
+    static const char* const js[] = {"idle", "hoert zu", "prueft", "fertig", "fehlgeschlagen"};
+    Serial.printf("Jam: %s, ok %lu Frames, Rest %ld us, Drift %.2f ppm%s\n", js[(int)j.state], (unsigned long)j.okFrames,
+                  (long)j.residualUs, j.ppm, j.muteHeld ? "  [Ausgang stumm bis Kabel ab]" : "");
+    Serial.printf("Userbits TX %08lX  RX %08lX  empfangene Frames %lu\n", (unsigned long)arc::engine::txUserBits(),
+                  (unsigned long)arc::engine::rxUserBits(), (unsigned long)arc::ltcin::framesReceived());
     Serial.printf("Shot: Roll %s  Szene %d  Shot %s  Take %d  Code %s\n", state::rollString().c_str(), s.scene,
                   s.shot.c_str(), s.take, s.code.c_str());
-    Serial.printf("Userbits TX %08lX  RX %08lX  Jam ok %lu  RX %.2f fps%s\n", (unsigned long)ltc::txUserBits(),
-                  (unsigned long)ltc::rxUserBits(), (unsigned long)ltc::jamOkCount(), ltc::rxFps(),
-                  ltc::muteHeld() ? "  [Ausgang stumm bis Kabel ab]" : "");
-    Serial.printf("Netz: %s\n", net::statusLine().c_str());
-    Serial.printf("Klappe %s, Ereignisse %lu, Heap %lu\n", clap::closed() ? "zu" : "offen",
-                  (unsigned long)clap::eventCount(), (unsigned long)ESP.getFreeHeap());
+    Serial.printf("Netz: %s\n", slate::statusLine().c_str());
+    Serial.printf("Klappe %s, Ereignisse %lu, Log %u Bytes, Heap %lu\n", clap::closed() ? "zu" : "offen",
+                  (unsigned long)clap::eventCount(), (unsigned)arc::events::size(), (unsigned long)ESP.getFreeHeap());
 }
 
 void detectSqwEdge() {
     bool falling = true;
     int32_t offsetMs = 0;
     Serial.println("[CLK] Messe, welche SQW-Flanke den Sekundenwechsel markiert ...");
-    if (!arcclock::detectSqwEdge(falling, offsetMs)) {
+    if (!arc::clock::detectSqwEdge(falling, offsetMs)) {
         Serial.println("[CLK] Messung fehlgeschlagen (RTC/SQW prüfen)");
         return;
     }
-    Serial.printf("[CLK] Sekundenwechsel = %s Flanke (Abstand %ld ms)\n", falling ? "fallende" : "steigende",
-                  (long)offsetMs);
+    Serial.printf("[CLK] Sekundenwechsel = %s Flanke (Abstand %ld ms)\n", falling ? "fallende" : "steigende", (long)offsetMs);
     state::lock();
     state::settings().sqwFalling = falling;
     state::settings().sqwEdgeKnown = true;
     state::touch();
     state::unlock();
-    arcclock::useEdge(falling);
+    arc::clock::useEdge(falling);
 }
 
 void i2cScan() {
-    arcclock::lockI2C();
+    arc::clock::lockI2C();
     for (uint8_t a = 1; a < 127; a++) {
         Wire.beginTransmission(a);
-        if (Wire.endTransmission() == 0) Serial.printf("  I2C-Gerät 0x%02X%s\n", a, a == 0x68 ? " (DS3231)" : a == 0x57 ? " (EEPROM)" : "");
+        if (Wire.endTransmission() == 0)
+            Serial.printf("  I2C-Gerät 0x%02X%s\n", a, a == 0x68 ? " (DS3231)" : a == 0x57 ? " (EEPROM)" : "");
     }
-    arcclock::unlockI2C();
+    arc::clock::unlockI2C();
 }
 
 void setShotValue(const String& key, const String& val) {
@@ -116,8 +146,8 @@ void setShotValue(const String& key, const String& val) {
     s.loaded = true;
     state::touch();
     state::unlock();
-    ltc::refreshUserBits();
-    net::sendSlateState();
+    slate::updateUserBits();
+    slate::sendSlateState();
     epd::requestCard();
 }
 
@@ -132,26 +162,25 @@ void handleSerial() {
 
     if (cmd == "?") printStatus();
     else if (cmd == "help") printHelp();
-    else if (cmd == "1") ltc::requestMode(MODE_GEN_FREE_RUN);
-    else if (cmd == "2") ltc::requestMode(MODE_GEN_RECORD_RUN);
-    else if (cmd == "4") ltc::requestMode(MODE_SLAVE);
-    else if (cmd == "5") ltc::requestMode(MODE_JAM_SYNC_FREE_RUN);
-    else if (cmd == "6") ltc::requestMode(MODE_JAM_SYNC_RECORD_RUN);
-    else if (cmd == "q") ltc::setRate(RATE_30);
-    else if (cmd == "w") ltc::setRate(RATE_25);
-    else if (cmd == "e") ltc::setRate(RATE_2997DF);
-    else if (cmd == "r") ltc::setRate(RATE_24);
-    else if (cmd == "s") { if (ltc::running()) ltc::stop(); else ltc::start(); }
-    else if (cmd == "x") ltc::stop();
-    else if (cmd == "t") ltc::resetTimecode();
-    else if (cmd == "tc") { Timecode tc; if (ltc::parseTc(arg, tc)) ltc::setTimecode(tc); }
-    else if (cmd == "u") ltc::releaseMuteHold();
-    else if (cmd == "n") { net::requestNtpSync(); Serial.println("NTP-Sync angefordert (nur im WLAN mit Internet)"); }
+    else if (cmd == "1") arc::engine::requestMode(Mode::FreeRun);
+    else if (cmd == "2") arc::engine::requestMode(Mode::RecordRun);
+    else if (cmd == "4") arc::engine::requestMode(Mode::Slave);
+    else if (cmd == "5") arc::engine::requestMode(Mode::JamFree);
+    else if (cmd == "6") arc::engine::requestMode(Mode::JamRec);
+    else if (cmd == "q") arc::engine::setRate(TcRate::R30);
+    else if (cmd == "w") arc::engine::setRate(TcRate::R25);
+    else if (cmd == "e") arc::engine::setRate(TcRate::R2997DF);
+    else if (cmd == "r") arc::engine::setRate(TcRate::R24);
+    else if (cmd == "s") { if (arc::engine::running()) arc::engine::stop(); else arc::engine::start(); }
+    else if (cmd == "x") arc::engine::stop();
+    else if (cmd == "t") arc::engine::setTimecode(arc::Timecode());
+    else if (cmd == "tc") { arc::Timecode tc; if (arc::parseTc(arg.c_str(), tc)) arc::engine::setTimecode(tc); }
+    else if (cmd == "u") arc::engine::confirmUnplug();
+    else if (cmd == "n") { arc::net::requestNtpSync(); Serial.println("NTP-Sync angefordert (nur im WLAN mit Internet)"); }
     else if (cmd == "time") {
         int y, mo, da, h, mi, se;
         if (sscanf(arg.c_str(), "%d-%d-%d %d:%d:%d", &y, &mo, &da, &h, &mi, &se) == 6) {
-            arcclock::setTime(DateTime(y, mo, da, h, mi, se));
-            Serial.println("RTC gestellt");
+            arc::clock::setTime(DateTime(y, mo, da, h, mi, se));
         }
     }
     else if (cmd == "sqw") detectSqwEdge();
@@ -171,15 +200,8 @@ void handleSerial() {
         state::lock(); state::settings().brightness = b; state::touch(); state::unlock();
         mtx::setBrightness(b);
     }
-    else if (cmd == "lat") {
-        const int sp2 = arg.indexOf(' ');
-        const String which = arg.substring(0, sp2);
-        const int32_t us = arg.substring(sp2 + 1).toInt();
-        state::lock();
-        if (which == "flash") state::settings().flashLatencyUs = us;
-        else if (which == "ltc") state::settings().ltcOutLatencyUs = us;
-        state::touch();
-        state::unlock();
+    else if (cmd == "lat" && arg.startsWith("flash ")) {
+        state::lock(); state::settings().flashLatencyUs = arg.substring(6).toInt(); state::touch(); state::unlock();
     }
     else if (cmd == "wifi") {
         if (arg.startsWith("add ")) {
@@ -190,19 +212,15 @@ void handleSerial() {
             int prio = 10;
             const int b = pass.lastIndexOf(' ');
             if (b > 0 && pass.substring(b + 1).toInt() > 0) { prio = pass.substring(b + 1).toInt(); pass = pass.substring(0, b); }
-            net::addNetwork(ssid, pass, prio);
+            arc::net::addNetwork(ssid, pass, prio);
         } else if (arg == "clear") {
-            net::clearNetworks();
+            arc::net::clearNetworks();
         }
-        net::printNetworks();
+        arc::net::printNetworks(Serial);
     }
     else if (cmd == "log") {
-        if (arg == "clear") { LittleFS.remove("/events.jsonl"); LittleFS.remove("/events.old.jsonl"); Serial.println("Log gelöscht"); }
-        else {
-            File f = LittleFS.open("/events.jsonl", "r");
-            if (!f) Serial.println("(leer)");
-            else { while (f.available()) Serial.write(f.read()); f.close(); }
-        }
+        if (arg == "clear") { arc::events::clear(); Serial.println("Log gelöscht"); }
+        else arc::events::print(Serial);
     }
     else Serial.printf("Unbekannter Befehl '%s' – 'help' zeigt alle Befehle\n", line.c_str());
 }
@@ -215,7 +233,7 @@ void setup() {
     Serial.println("\nARC-Slate " ARC_FW_VERSION " startet ...");
 
     state::begin();
-    if (!LittleFS.begin(true)) Serial.println("[FS] LittleFS nicht verfügbar");
+    arc::events::begin();
 
     spibus::begin();
     mtx::begin();
@@ -225,17 +243,27 @@ void setup() {
     state::lock();
     const bool sqwFalling = state::settings().sqwFalling;
     const bool sqwKnown = state::settings().sqwEdgeKnown;
+    TcRate rate = TcRate::R25;
+    arc::rateFromFps(state::shot().fps, rate);
     state::unlock();
-    arcclock::begin(sqwFalling);
-    if (arcclock::rtcPresent() && !sqwKnown) detectSqwEdge();
+    arc::clock::begin({PIN_RTC_SDA, PIN_RTC_SCL, PIN_RTC_SQW}, sqwFalling);
+    if (arc::clock::rtcPresent() && !sqwKnown) detectSqwEdge();
 
-    ltc::onStatusChange(onLtcStatus);
-    ltc::begin();
+    arc::engine::Config ec;
+    ec.dacBck = PIN_DAC_BCK;
+    ec.dacLrck = PIN_DAC_LRCK;
+    ec.dacDin = PIN_DAC_DIN;
+    ec.dacMute = PIN_PCM_XSMT;
+    ec.ltcIn = PIN_LTC_IN;
+    arc::engine::onStatusChange(onEngineStatus);
+    arc::engine::onJamEvent(onJam);
+    arc::engine::begin(ec, rate);
+
     clap::begin();
     ui::begin();
-    net::begin();
+    slate::begin();
 
-    epd::setStatusProvider(net::statusLine);
+    epd::setStatusProvider(slate::statusLine);
     epd::begin();          // boot screen (blocks ~4 s, LEDs keep running)
     epd::startTask();
     epd::requestCard();
@@ -245,12 +273,18 @@ void setup() {
 }
 
 void loop() {
-    ltc::loop();
-    net::loop();
+    arc::engine::loop();
+    arc::net::loop();
+    slate::loop();
     state::saveIfDirty();
     if (s_statusChanged) {
         s_statusChanged = false;
-        net::broadcastStatus();
+        // Keep the stored frame rate in sync with the engine.
+        state::lock();
+        const float fps = (float)arc::realFps(arc::engine::rate());
+        if (fabsf(state::shot().fps - fps) > 0.001f) { state::shot().fps = fps; state::touch(); }
+        state::unlock();
+        arc::net::broadcastStatus();
         epd::requestStatus();
     }
     handleSerial();
