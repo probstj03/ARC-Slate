@@ -1,14 +1,23 @@
-LedControl TC_LED = LedControl(13, 26, 25, 7);  //DIN, CLK, CS, numDevices 13
+#include "arc.h"
+#include <pgmspace.h>
+#include "LedControl.h"
 
-LedControl DATA_LED = LedControl(12, 26, 25, 9);
+// ESP32 PROGMEM compatibility - not needed on ESP32 but kept for compatibility
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+
+// Timecode LED Matrix (7-segment display) - uses pins from arc.h
+// Objects will be created in setup() to avoid early initialization issues
+extern LedControl* TC_LED;
+extern LedControl* DATA_LED;
 
 int brightness = 8;
 
-
 bool blinking = false;
 
-
-unsigned char PROGMEM font_number[11][5] = {
+// Font arrays without PROGMEM (ESP32 doesn't need it)
+unsigned char font_number[11][5] = {
   { 0x3E, 0x45, 0x49, 0x51, 0x3E },  // 0 - 9
   { 0x00, 0x21, 0x7F, 0x1, 0x0 },
   { 0x21, 0x43, 0x45, 0x49, 0x31 },
@@ -22,7 +31,7 @@ unsigned char PROGMEM font_number[11][5] = {
   { 0, 0, 0, 0, 0 },  // space
 };
 
-unsigned char PROGMEM font_letter[37][5] = {
+unsigned char font_letter[37][5] = {
   { 0x3E, 0x45, 0x49, 0x51, 0x3E },  // 0 - 9
   { 0x00, 0x21, 0x7F, 0x1, 0x0 },
   { 0x21, 0x43, 0x45, 0x49, 0x31 },
@@ -95,14 +104,14 @@ void fill_buffer(unsigned char* buffer, const char* text, int bufferWidth, bool 
       if (c >= 'A' && c <= 'Z') {
         int index = c - 'A' + 11;
         if (index >= 0 && index < 37) {
-          memcpy_P(letterData, font_letter[index], 5);
+          memcpy(letterData, font_letter[index], 5);
         } else {
           memset(letterData, 0, 5);
         }
       } else if (c >= '0' && c <= '9') {
         int index = c - '0';
         if (index >= 0 && index < 37) {
-          memcpy_P(letterData, font_letter[index], 5);
+          memcpy(letterData, font_letter[index], 5);
         } else {
           memset(letterData, 0, 5);
         }

@@ -6,7 +6,7 @@
 #include "data/logo.h"
 
 #include <GxEPD2_BW.h>        // GxEPD2-Library für E-Ink-Displays
-#include "QRCodeGenerator.h"  // Felix Erdmanns QR-Code-Bibliothek
+#include <qrcode.h>           // QR-Code-Bibliothek (ricmoo/QRCode)
 
 
 GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display(GxEPD2_750_T7(/*CS=5*/ 5, /*DC=*/33, /*RST=*/15, /*BUSY=*/16));  // GDEW075T7 800x480, EK79655 (GD7965)
