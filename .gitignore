@@ -22,3 +22,8 @@ build/
 # System
 .DS_Store
 Thumbs.db
+
+# KiCad
+*-backups/
+*.lck
+fp-info-cache

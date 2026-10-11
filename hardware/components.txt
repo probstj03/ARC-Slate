@@ -1,53 +1,64 @@
 ARC-Slate – Hardware-Komponenten
 =================================
+Platine: ARC_AP (identisch mit ARC-Play, unverändert)
+Verdrahtung: hardware/wiring/ARC-Slate_Verdrahtung.svg
+Die alte Platine AS1.1 (klassischer ESP32) ist stillgelegt (hardware/AS1.1, nur noch Referenz).
 
 Mikrocontroller
 ---------------
-     ESP32-S3-DevKitC-1 (N16R8)        Hauptcontroller (WLAN, I2S, SD_MMC)
+U1   ESP32-S3-DevKitC-1 (N16R8)        Hauptcontroller (WLAN, I2S, SPI)
+                                       GPIO35–37 vom PSRAM belegt – nicht verwenden
 
 Anzeige
 -------
-     MAX7219 8x8-LED-Matrix-Module     7 Stück in Kette (Timecode-Anzeige)
-                                       DIN GPIO38, CS GPIO39, CLK GPIO40
-                                       3x3 Stück für Roll, Scene, Shot und Take Anzeige
+     MAX7219 8x8-LED-Matrix-Module     Kette 1: 7 Stück, Timecode-Anzeige
+                                       LOAD GPIO7 (U4 Pin 8)
+     MAX7219 8x8-LED-Matrix-Module     Kette 2: 9 Stück (3x3), Roll / Shot / Scene + Take
+                                       LOAD GPIO14 (J1 Pin 3)
+                                       beide Ketten: DIN = MOSI GPIO11, CLK = SCK GPIO12 (U4 Pin 6/7)
+                                       Versorgung direkt aus 5-V-Schiene, je Kette ≥ 470 µF
+     E-Ink-Display 7,5" 800x480        GDEW075T7 (GxEPD2_750_T7) + Treiberplatine
+                                       an U4: CS GPIO10, RST GPIO8, DC GPIO9, BUSY GPIO13,
+                                       DIN GPIO11, CLK GPIO12, 3V3, GND
 
-     E-Ink-Display 7,5" 800x480        GDEW075T7 (GxEPD2_750_T7) 
-                                       nur im Schaltplan AS1.1 / alter Firmware,
-                                           neue Firmware steuert es noch nicht an
-
-Audio / Timecode
-----------------
-     PCM5102A Audio-DAC (I2S)          LTC-Ausgabe
+Audio / Timecode (auf der Platine)
+----------------------------------
+U7   PCM5102A Audio-DAC (I2S)          LTC-Ausgabe
                                        BCK GPIO18, LRCK GPIO17, DIN GPIO16, XSMT (Mute) GPIO3
-     LTC-Eingangsstufe                 eingehender Timecode -> GPIO4
-                                       [?] Bauteile (z. B. LM358 + 74HC14 wie bei ARC-Play)
-J15  3,5 mm Klinkenbuchse              Timecode-Ein-/Ausgang
+U3   LM358 Operationsverstärker        LTC-Eingangsstufe
+U6   SN74HC14N Schmitt-Trigger         LTC-Eingang -> GPIO4
+R1–R4, C1, C2                          wie ARC-Play (100k, 100k, 1M, 10k, 10nF, 10nF)
+J2   3,5 mm Klinkenbuchse (TRS)        Timecode-Ein-/Ausgang (Jam Sync)
+J3   –                                 nicht bestücken (kein Playback)
 
 Echtzeituhr
 -----------
-J4   DS3231 RTC-Modul                  I2C: SDA GPIO42, SCL GPIO41, SQW (1 Hz) GPIO5
-     CR2032-Knopfzelle für RTC         
-
+U2   DS3231 RTC-Modul                  I2C: SDA GPIO42, SCL GPIO41, SQW (1 Hz) GPIO5
+     CR2032-Knopfzelle für RTC         bei ZS-042-Modulen Ladediode entfernen
 
 Bedienung
 ---------
-J5   Hallsensor                       erkennt das Schließen der Klappe
-J16  Taster 1 (90°, eigener Footprint)
-J17  Taster 2 (90°, eigener Footprint)
-J18  Taster 3 (90°, eigener Footprint)
-J14  LED                               Blitz LED für Timecode Sync
-J8   LED-Treiber                       LD06AJSA
+SW1  Drehencoder mit Taster (KY-040)   CLK GPIO38, DT GPIO39, SW GPIO40
+     Hallsensor (3,3-V-Typ)            erkennt das Schließen der Klappe, OUT -> GPIO2 (J1 Pin 4)
+                                       z. B. DRV5032 / US5881 (kein A3144)
+     LED-Treiber LD06AJSA              DIM/EN <- GPIO15 (J1 Pin 5), Versorgung aus 5 V
+                                       3,3-V-Pegel und Einschaltverzögerung prüfen
+     Blitz-LED                         Timecode-Sync beim Klappen (1 Frame)
 
 Stromversorgung
 ---------------
-J9   Power-Anschluss (2-pin)
-     Akku im Batteriefach              
-     Spannungswandler
+     Akku im Batteriefach              Typ/Kapazität offen
+     Schalter
+     5-V-Wandler ≥ 3 A                 Matrizen, LED-Treiber
+     3,3-V-Regler ≥ 600 mA             -> J4 (+3V3, GND)
+     Schottky-Diode (optional)         in der J4-Zuleitung, schützt bei angestecktem USB
+J4   Stromversorgungs-Anschluss        +3,3 V / GND
 
 Mechanik
 --------
-     Platine AS1.1 (eigene Leiterplatte)
+     Platine ARC_AP (zweites Exemplar)
      3D-Druck-Teile: Klappe Gehäuse V2 + Deckel, Batteriefach + Deckel,
        Matrix-Halterungen (7x1, 3x3), Display-Halterung + Schutzplatte, Zwischendeckel
+       (an ARC_AP-Platine und Drehencoder anpassen)
      Stiftleisten / Buchsenleisten 2,54 mm (für Module)
-     [?] Klappen-Scharnier, Schrauben, Magnete
+     [?] Klappen-Scharnier, Schrauben, Magnet für Hallsensor
