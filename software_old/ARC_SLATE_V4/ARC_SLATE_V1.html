@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARC SLATE</title>
+  <style>
+    body {
+      background-color: #fff;
+      color: #000;
+      font-family: 'Segment Medium', "Open Sans", sans-serif;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 20px;
+    }
+
+    header {
+      height: 100px;
+      position: fixed;
+      border-bottom: 2px solid black;
+      width: 100vw;
+      background-color: white;
+      z-index: 2;
+      left: 0px;
+      top: 0px;
+    }
+
+    #logo {
+      position: fixed;
+      left: 10px;
+      top: 10px;
+      width: 200px;
+    }
+
+    form {
+      position: relative;
+      width: 700px;
+      top: 120px;
+      margin: auto;
+      color: white;
+      text-align: left;
+    }
+
+    label {
+      text-align: left;
+      font-size: 18pt;
+      margin: 20px;
+      width: 250px;
+      display: inline-block;
+    }
+
+    button {
+      margin: 20px;
+      padding: 20px;
+      background-color: #D8B810;
+      color: white;
+      font-size: 18pt;
+      font-weight: bold;
+      border-radius: 4px;
+      border: none;
+      width: 660px;
+      transition: 0.1s;
+    }
+
+    button:hover {
+      cursor: pointer;
+      background-color: white;
+      color: black;
+      border: 2px solid black;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      display: inline-block;
+      margin: 20px;
+      padding: 10px;
+      background-color: white;
+      color: black;
+      font-size: 14pt;
+      border-radius: 4px;
+      border: none;
+      width: 250px;
+    }
+
+    .part {
+      border-radius: 4px;
+      margin: 20px;
+      padding: 10px;
+    }
+
+    #part_three input[type="radio"],
+    #part_three input[type="checkbox"] {
+      margin: 10px;
+    }
+
+    #part_three label {
+      text-align: left;
+      font-size: 18pt;
+      margin: 10px;
+      width: auto;
+      display: inline-block;
+    }
+
+    #ip {
+      position: fixed;
+      right: 10px;
+      top: 10px;
+      width: 150px;
+      background-color: #215064;
+      color: white;
+    }
+
+    #messages { 
+      margin-top: 20px; 
+      font-size: 16pt; 
+      color: black; 
+      background: #eee; 
+      padding: 10px; 
+      border-radius: 5px; 
+      width: 700px; 
+      margin-left: auto;
+      margin-right: auto; }
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ARC Slate</h1>
+    <img id="logo" src="img/albrecht-logo-invers-alpha.png" alt="logo">
+    <input type="text" id="ip" name="ip" required value="192.168.178.89">
+  </header>
+
+  <form id="arc_slate">
+    <div class="part" style="background-color: #D8B810;">
+      <label for="roll">Roll:</label>
+      <input type="text" id="roll" name="roll" required value="A001">
+
+      <label for="szene">Szene:</label>
+      <input type="text" id="szene" name="szene" required value="001A">
+
+      <label for="shot">Shot:</label>
+      <input type="number" id="shot" name="shot" required value="2">
+
+      <label for="take">Take:</label>
+      <input type="number" id="take" name="take" required value="6">
+    </div>
+
+    <div class="part" style="background-color: #215064;">
+      <label for="code">Code:</label>
+      <input type="text" id="code" name="code" required value="test">
+
+      <label for="production">Production:</label>
+      <input type="text" id="production" name="production" required value="Coma">
+
+      <label for="director">Director:</label>
+      <input type="text" id="director" name="director" required value="Felix Albrecht">
+
+      <label for="camera">Camera:</label>
+      <input type="text" id="camera" name="camera" required value="Julian Probst">
+    </div>
+
+    <div id="part_three" class="part" style="background-color: #913133;">
+      <h1>Int/Ext</h1>
+      <label><input type="radio" name="ext" value="true"> Ext</label>
+      <label><input type="radio" name="ext" value="false"> Int</label>
+
+      <h1>Day/Night</h1>
+      <label><input type="radio" name="night" value="false"> Day</label>
+      <label><input type="radio" name="night" value="true"> Night</label>
+
+      <h1>Framerate</h1>
+      <label><input type="radio" name="framerate" value="24"> 24</label>
+      <label><input type="radio" name="framerate" value="25"> 25</label>
+      <label><input type="radio" name="framerate" value="30"> 30</label>
+
+      <h1>MOS</h1>
+      <label><input type="checkbox" id="mos" name="mos"> MOS</label>
+    </div>
+
+    <button type="button" onclick="sendData()">Senden</button>
+  </form>
+
+  <div id="messages">WebSocket-Nachrichten erscheinen hier...</div>
+
+  <script>
+    let socket;
+
+    function connectWebSocket() {
+      const ip = document.getElementById("ip").value;
+
+      socket = new WebSocket(`ws://${ip}/ws`l);
+
+      socket.onopen = () => {
+        console.log("WebSocket verbunden:", wsUrl);
+        document.getElementById("messages").textContent = "WebSocket verbunden";
+      };
+
+      socket.onmessage = (event) => {
+        console.log("Nachricht empfangen:", event.data);
+        document.getElementById("messages").textContent = event.data;
+      };
+
+      socket.onerror = (error) => {
+        console.error("WebSocket-Fehler:", error);
+        document.getElementById("messages").textContent = "WebSocket-Fehler";
+      };
+
+      socket.onclose = () => {
+        console.warn("WebSocket getrennt");
+        document.getElementById("messages").textContent = "WebSocket getrennt – erneut verbinden...";
+        setTimeout(connectWebSocket, 3000); // automatisch neu verbinden
+      };
+    }
+
+    function sendData() {
+      const ip = document.getElementById("ip").value;
+      const roll = document.getElementById("roll").value;
+      const szene = document.getElementById("szene").value;
+      const shot = document.getElementById("shot").value;
+      const take = document.getElementById("take").value;
+      const code = document.getElementById("code").value;
+      const production = document.getElementById("production").value;
+      const director = document.getElementById("director").value;
+      const camera = document.getElementById("camera").value;
+
+      const ext = document.querySelector('input[name="ext"]:checked')?.value || "false";
+      const night = document.querySelector('input[name="night"]:checked')?.value || "false";
+      const framerate = document.querySelector('input[name="framerate"]:checked')?.value || "24";
+      const mos = document.getElementById("mos").checked ? "true" : "false";
+
+      const params = new URLSearchParams({
+        roll,
+        szene,
+        shot,
+        take,
+        code,
+        production,
+        director,
+        camera,
+        ext,
+        night,
+        framerate,
+        mos
+      });
+
+      const url = `http://${ip}/?${params.toString()}`;
+
+      fetch(url)
+        .then(response => {
+          if (!response.ok) throw new Error('Netzwerkantwort war nicht ok');
+          return response.text();
+        })
+        .then(data => {
+          console.log("Antwort vom Server:", data);
+          alert("Antwort vom Server: " + data);
+        })
+        .catch(error => {
+          console.error("Fehler beim Senden der Daten:", error);
+          alert("Fehler beim Senden der Daten: " + error);
+        });
+    }
+
+    // Starte WebSocket-Verbindung bei Seitenlade
+    window.addEventListener("load", connectWebSocket);
+  </script>
+</body>
+</html>

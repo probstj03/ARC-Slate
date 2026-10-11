@@ -1,0 +1,53 @@
+{
+    "code": "51354",
+    "name": "Coma",
+    "director": "Felix Albrecht",
+    "camera": "Julian Probst",
+    "shotlist": [
+      {
+        "scene": "0001",
+        "shot": "01",
+        "mos": false,
+        "ext": true,
+        "night": false,
+        "takes": [
+          {
+            "take": "01",
+            "timecode": "10:17:34:06",
+            "roll": "A001"
+          },
+          {
+            "take": "02",
+            "timecode": "10:20:34:06",
+            "roll": "A001"
+          }
+        ]
+      },
+      {
+        "scene": "0001",
+        "shot": "02",
+        "mos": true,
+        "ext": false,
+        "night": true,
+        "takes": [
+          {
+            "take": "01",
+            "timecode": "10:25:00:00",
+            "roll": "A002"
+          }
+        ]
+      },
+      {
+        "scene": "0002",
+        "shot": "01",
+        "takes": [
+          {
+            "take": "01",
+            "timecode": "11:00:00:00",
+            "roll": "A003"
+          }
+        ]
+      }
+    ]
+  }
+  

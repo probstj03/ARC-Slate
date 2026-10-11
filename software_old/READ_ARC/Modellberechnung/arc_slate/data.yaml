@@ -1,0 +1,14 @@
+# YOLO Segmentation Training Configuration
+# Generiert am: 2025-11-20
+
+# Pfade (absolut für Sicherheit)
+path: /Users/julian/Library/CloudStorage/OneDrive-HAW-HH/4. Semester/M7/Modellberechnung/arc_slate
+train: images
+val: images  # Nutzen Sie erstmal alle Bilder für Training + Validation
+
+# Anzahl Klassen
+nc: 1
+
+# Klassennamen
+names:
+  0: ARC-SLATE

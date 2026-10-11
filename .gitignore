@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ML-Modellgewichte (zu groß für Git)
+*.pt
+
+# Logs / Laufzeit
+*.log
+*.pid
+
+# PlatformIO / Arduino
+.pio/
+build/
+
+# FreeCAD-Backups
+*.FCBak
+*.FCStd1
+
+# System
+.DS_Store
+Thumbs.db

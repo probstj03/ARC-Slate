@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARC SLATE</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+    <style>
+      body {
+        background-color: #fff;
+        color: #000;
+        font-family: "Segment Medium", "Open Sans", sans-serif;
+        text-align: center;
+        align-items: center;
+      }
+
+      h1 {
+        font-size: 30pt;
+      }
+
+      h2 {
+        font-size: 20pt;
+      }
+
+      header {
+        height: 100px;
+        position: fixed;
+        border-bottom: 2px solid black;
+        width: 100vw;
+        background-color: white;
+        z-index: 2;
+        left: 0px;
+        top: 0px;
+        text-align: center;
+      }
+
+      #ip {
+        position: fixed;
+        right: 10px;
+        top: 10px;
+        width: 150px;
+        background-color: #215064;
+        color: white;
+      }
+
+      #logo {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        width: 200px;
+      }
+
+      #connection {
+        position: fixed;
+        right: 220px;
+        top: 30px;
+        color: white;
+        padding: 10px;
+        font-size: 14pt;
+        border-radius: 5px;
+        background-color: #913133;
+      }
+
+      #open_settings {
+        position: fixed;
+        right: 350px;
+        top: 19px;
+        padding: 10px;
+        font-size: 14pt;
+        border-radius: 5px;
+        background-color: #215064;
+      }
+
+      button {
+        margin: 10px;
+        padding: 10px;
+        width: 45px;
+        height: 45px;
+        background-color: #00000000;
+        color: white;
+        font-size: 14pt;
+        border-radius: 4px;
+        border: 1px solid white;
+        transition: 0.1s;
+      }
+
+      button:hover {
+        cursor: pointer;
+        background-color: white;
+        color: black;
+        border: 1px solid black;
+      }
+
+      input {
+        display: inline-block;
+        margin: 20px;
+        padding: 10px;
+        background-color: white;
+        color: black;
+        font-size: 12pt;
+        border-radius: 4px;
+        border: none;
+        width: 250px;
+      }
+
+      #project {
+        width: 700px;
+        border: 2px solid white;
+        background-color: #215064;
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        margin: auto;
+        position: relative;
+        top: 150px;
+      }
+
+      #shotlist {
+        margin: auto;
+        position: relative;
+        top: 150px;
+      }
+
+      .shot {
+        margin: auto;
+        width: 700px;
+        border: 2px solid white;
+        background-color: rgb(141, 141, 141);
+        color: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        text-align: left;
+        transition: 0.1;
+        transition: height 0.3s ease;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .active_shot {
+        background-color: #d8b810;
+      }
+
+      .take {
+        background-color: #00000000;
+        border-radius: 10px;
+        border: 2px solid white;
+        padding: 20px;
+        margin: 20px;
+      }
+
+      #add_shot {
+        border: 2px solid white;
+        background-color: #d8b810;
+        color: white;
+      }
+
+      #shot_form_container {
+        position: fixed;
+        top: 150px;
+        width: 400px;
+        border: 2px solid white;
+        background-color: #d8b810;
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+        z-index: 5;
+      }
+
+      #shot_form_container label {
+        width: 200px;
+        display: inline-block;
+        font-size: 14pt;
+        text-align: left;
+      }
+
+      #shot_form_container input {
+        width: 100px;
+      }
+
+      .toggle_takes_btn {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1>ARC Slate</h1>
+      <img id="logo" src="img/albrecht-logo-invers-alpha.png" alt="logo" />
+      <input type="text" id="ip" name="ip" required />
+      <div id="connection">Disconnected</div>
+      <button id="open_settings" class="fas fa-gear"></button>
+    </header>
+    <input type="file" id="json_input" accept=".json" style="display: none" />
+
+    <div id="project">
+      <button id="open_json" class="fas fa-folder-open"></button>
+      <button id="save_json" class="fas fa-save"></button>
+      <button id="edit_json" class="fas fa-pen"></button>
+      <h1>Project</h1>
+      <h3>
+        Produktion: <span id="production_display"></span>
+        <input type="text" id="production_input" style="display: none" />
+      </h3>
+      <h3>
+        Code: <span id="code_display"></span>
+        <input type="text" id="code_input" style="display: none" />
+      </h3>
+      <h3>
+        Director: <span id="director_display"></span>
+        <input type="text" id="director_input" style="display: none" />
+      </h3>
+      <h3>
+        Camera: <span id="camera_display"></span>
+        <input type="text" id="camera_input" style="display: none" />
+      </h3>
+    </div>
+    <div id="settings_container" style="display: none">
+      <h1>Settings</h1>
+      <label for="brightness">Brightness:</label>
+      <input
+        type="range"
+        id="brightness"
+        name="brightness"
+        min="0"
+        max="100"
+        value="50"
+      />
+      <br />
+      <label for="syncRTC">Sync RTC:</label>
+      <input type="checkbox" id="syncRTC" name="syncRTC" checked />
+      <br />
+      <button id="save_settings">Save Settings</button>
+    </div>
+
+    <div id="shotlist">
+      <h1>Shotlist</h1>
+      <div id="shot_form_container" style="display: none"></div>
+      <div id="shotlist_container"></div>
+      <button id="add_shot" class="fas fa-add"></button>
+    </div>
+
+    <!-- <div id="messages">WebSocket-Nachrichten erscheinen hier...</div> -->
+
+    <script>
+      let socket;
+
+      let activeShotIndex = null; // Globale Variable zum Merken des aktiven Shots
+
+      document.addEventListener("DOMContentLoaded", function () {
+        const savedIP = localStorage.getItem("savedIP");
+        if (savedIP) {
+          document.getElementById("ip").value = savedIP;
+        }
+      });
+      document.getElementById("ip").addEventListener("change", function () {
+        localStorage.setItem("savedIP", this.value);
+      });
+
+      function connectWebSocket() {
+        const ip = document.getElementById("ip").value;
+
+        socket = new WebSocket(`ws://${ip}/ws`);
+
+        socket.onopen = () => {
+          document.getElementById("connection").innerHTML = "Connected";
+          document.getElementById("connection").style.backgroundColor =
+            "#387027";
+          console.log("WebSocket verbunden");
+        };
+
+        socket.onmessage = (event) => {
+          console.log("Nachricht empfangen:", event.data);
+
+          let parsedData;
+          try {
+            parsedData = JSON.parse(event.data);
+          } catch (e) {
+            console.error("Ungültiges JSON:", event.data);
+            return;
+          }
+
+          // Unterscheide Nachrichtentyp
+          if (parsedData.type === "nextShot") {
+            activeShotIndex++;
+            if (activeShotIndex >= currentData.shotlist.length) {
+              activeShotIndex = 0; // Zurück zum ersten Shot, wenn das Ende erreicht ist
+            }
+            displayShots();
+            sendData(currentData, activeShotIndex);
+          } else if (parsedData.type === "previousShot") {
+            activeShotIndex--;
+            if (activeShotIndex < 0) {
+              activeShotIndex = currentData.shotlist.length - 1; // Zum letzten Shot springen
+            }
+            displayShots();
+            sendData(currentData, activeShotIndex);
+          } else if (parsedData.type === "newTake") {
+            const { take, timecode, date, roll } = parsedData;
+            addTake(take, timecode, roll, date, activeShotIndex);
+            //sendData(currentData, activeShotIndex);
+          } 
+        };
+
+        socket.onerror = (error) => {
+          console.error("WebSocket-Fehler:", error);
+          document.getElementById("messages").textContent = "WebSocket-Fehler";
+        };
+
+        socket.onclose = () => {
+          document.getElementById("connection").innerHTML = "Disconnected";
+          document.getElementById("connection").style.backgroundColor =
+            "#913133;";
+          console.warn("WebSocket getrennt");
+          document.getElementById("messages").textContent =
+            "WebSocket getrennt – erneut verbinden...";
+          setTimeout(connectWebSocket, 3000); // automatisch neu verbinden
+        };
+      }
+      function sendData(data, i) {
+        const type = "shot";
+
+        const scene = data.shotlist[i].scene;
+        const shot = data.shotlist[i].shot;
+        const take = (data.shotlist[i].takes?.length || 0) + 1;
+
+        const code = data.code;
+        const production = data.production;
+        const director = data.director;
+        const camera = data.camera;
+
+        const environment = data.shotlist[i].environment;
+        const daynight = data.shotlist[i].daynight;
+        const framerate = data.shotlist[i].framerate;
+        const mos = data.shotlist[i].mos;
+
+        const message = JSON.stringify({
+          type,
+          scene,
+          shot,
+          take,
+          code,
+          production,
+          director,
+          camera,
+          environment,
+          daynight,
+          framerate,
+          mos,
+        });
+        socket.send(message);
+      }
+
+      function sendSettings(brightness, syncRTC) {
+        const type = "settings";
+
+        const message = JSON.stringify({
+          type,
+          brightness,
+          syncRTC,
+        });
+        socket.send(message);
+      }
+
+      let currentData = { shotlist: [] };
+      let currentFileName = null;
+
+      const input = document.getElementById("json_input");
+
+      document.getElementById("open_json").addEventListener("click", () => {
+        input.click();
+      });
+
+      input.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        currentFileName = file.name;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            currentData = JSON.parse(e.target.result);
+            if (!currentData.shotlist) currentData.shotlist = [];
+            displayProject(currentData);
+            displayShots();
+          } catch (err) {
+            alert("Fehler beim Laden der JSON-Datei.");
+            console.error(err);
+          }
+        };
+        reader.readAsText(file);
+      });
+
+      function displayProject(data) {
+        document.getElementById("production_display").textContent =
+          data.production || "";
+        document.getElementById("production_input").value = data.production || "";
+        document.getElementById("code_display").textContent = data.code || "";
+        document.getElementById("code_input").value = data.code || "";
+        document.getElementById("director_display").textContent =
+          data.director || "";
+        document.getElementById("director_input").value = data.director || "";
+        document.getElementById("camera_display").textContent =
+          data.camera || "";
+        document.getElementById("camera_input").value = data.camera || "";
+      }
+
+      document.getElementById("edit_json").addEventListener("click", () => {
+        toggleEdit(true);
+      });
+
+      function toggleEdit(editing) {
+        const display = editing ? "none" : "inline";
+        const input = editing ? "inline" : "none";
+        ["production", "code", "director", "camera"].forEach((field) => {
+          document.getElementById(`${field}_display`).style.display = display;
+          document.getElementById(`${field}_input`).style.display = input;
+        });
+      }
+
+      document.getElementById("save_json").addEventListener("click", () => {
+        ["production", "code", "director", "camera"].forEach((field) => {
+          currentData[field] = document.getElementById(`${field}_input`).value;
+        });
+        displayProject(currentData);
+        toggleEdit(false);
+        const blob = new Blob([JSON.stringify(currentData, null, 2)], {
+          type: "application/json",
+        });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = currentFileName || "project.json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      document.getElementById("add_shot").addEventListener("click", () => {
+        const last = currentData.shotlist[currentData.shotlist.length - 1];
+        openShotForm(last || null);
+      });
+
+      function openShotForm(entry = null, index = null) {
+        const container = document.getElementById("shot_form_container");
+
+        container.style.display = "block";
+
+        container.innerHTML = `
+          <label for="scene">Scene:</label>
+          <input type="number" id="scene_input" value="${entry?.scene || ""}">
+          <label for="shot">Shot:</label>
+          <input type="text" id="shot_input" value="${entry?.shot || ""}">
+          <label for="framerate">Framerate:</label>
+          <input type="number" id="framerate_input" value="${
+            entry?.framerate || ""
+          }">
+          <label>Day</label>
+          <input type="radio" name="daynight" value="DAY" ${
+            entry?.daynight === "DAY" ? "checked" : ""
+          }>
+          <label>Night</label>
+          <input type="radio" name="daynight" value="NIGHT" ${
+            entry?.daynight === "NIGHT" ? "checked" : ""
+          }>
+          <label>Dawn</label>
+          <input type="radio" name="daynight" value="DAWN" ${
+            entry?.daynight === "DAWN" ? "checked" : ""
+          }>
+          <label>INT</label>
+          <input type="radio" name="environment" value="INT" ${
+            entry?.environment === "INT" ? "checked" : ""
+          }>
+          <label>EXT</label>
+          <input type="radio" name="environment" value="EXT" ${
+            entry?.environment === "EXT" ? "checked" : ""
+          }>
+          <label for="mos">MOS</label>
+          <input type="checkbox" id="mos_input" ${entry?.mos ? "checked" : ""}>
+
+          <button id="save_shot_btn" class="fas fa-save"></button>
+          <button id="close_shot_form" class="fas fa-close"></button>
+        `;
+
+        document
+          .getElementById("save_shot_btn")
+          .addEventListener("click", () => {
+            document.getElementById("shot_form_container").style.display =
+              "none";
+
+            const newEntry = {
+              scene: parseInt(document.getElementById("scene_input").value, 10),
+              shot: document.getElementById("shot_input").value,
+              framerate: parseInt(
+                document.getElementById("framerate_input").value,
+                10
+              ),
+              environment:
+                document.querySelector('input[name="environment"]:checked')
+                  ?.value || "",
+              daynight:
+                document.querySelector('input[name="daynight"]:checked')
+                  ?.value || "",
+              mos: document.getElementById("mos_input").checked,
+              takes: entry?.takes || [],
+            };
+
+            if (index !== null) {
+              currentData.shotlist[index] = newEntry;
+            } else {
+              currentData.shotlist.push(newEntry);
+            }
+
+            container.innerHTML = "";
+            displayShots();
+          });
+
+        document
+          .getElementById("close_shot_form")
+          .addEventListener("click", () => {
+            document.getElementById("shot_form_container").style.display =
+              "none";
+          });
+      }
+
+      let expandedShotIndex = null; // Nur einer darf offen sein
+
+      function displayShots() {
+        const container = document.getElementById("shotlist_container");
+        container.innerHTML = "";
+
+        currentData.shotlist.forEach((entry, index) => {
+          const div = document.createElement("div");
+          div.classList.add("shot");
+
+          // Höhe je nach offenem Status
+          if (index === expandedShotIndex) {
+            div.style.height = "auto";
+          } else {
+            div.style.height = "90px";
+          }
+
+          // Aktiv-Markierung
+          if (index === activeShotIndex) {
+            div.classList.add("active_shot");
+          }
+
+          div.innerHTML = `<h2>Scene: ${entry.scene} | Shot: ${entry.shot}</h2>
+            <h3>${entry.framerate}FPS | ${entry.environment} | ${
+            entry.daynight
+          } | ${entry.mos ? "MOS" : ""}</h3>`;
+
+          const editBtn = document.createElement("button");
+          editBtn.classList.add("fas", "fa-pen");
+          editBtn.onclick = () => openShotForm(entry, index);
+
+          const toggleTakesBtn = document.createElement("button");
+          toggleTakesBtn.classList.add("fas", "fa-angle-down");
+          if (index === expandedShotIndex) {
+            toggleTakesBtn.classList.remove("fa-angle-down");
+            toggleTakesBtn.classList.add("fa-angle-up");
+          } else {
+            toggleTakesBtn.classList.remove("fa-angle-up");
+            toggleTakesBtn.classList.add("fa-angle-down");
+          }
+          toggleTakesBtn.classList.add("toggle_takes_btn");
+          toggleTakesBtn.onclick = () => {
+            if (expandedShotIndex === index) {
+              expandedShotIndex = null; // einklappen
+            } else {
+              expandedShotIndex = index; // nur diesen aufklappen
+            }
+            displayShots();
+          };
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.classList.add("fas", "fa-trash");
+          deleteBtn.onclick = () => {
+            if (confirm("Delete this shot?")) {
+              currentData.shotlist.splice(index, 1);
+              if (index === activeShotIndex) {
+                activeShotIndex = null;
+              } else if (index < activeShotIndex) {
+                activeShotIndex--;
+              }
+              if (index === expandedShotIndex) {
+                expandedShotIndex = null;
+              } else if (index < expandedShotIndex) {
+                expandedShotIndex--;
+              }
+              displayShots();
+            }
+          };
+
+          const activateBtn = document.createElement("button");
+          activateBtn.classList.add("fas", "fa-rocket");
+          activateBtn.onclick = () => {
+            activeShotIndex = index;
+            expandedShotIndex = index; // optional: bei Aktivierung auch öffnen
+            sendData(currentData, activeShotIndex);
+            displayShots();
+          };
+
+          // Nur anzeigen, wenn dieser Shot offen ist
+          if (
+            index === expandedShotIndex &&
+            entry.takes &&
+            entry.takes.length > 0
+          ) {
+            const takesDiv = document.createElement("div");
+            takesDiv.classList.add("take");
+
+            entry.takes.forEach((take, takeIndex) => {
+              const takeLine = document.createElement("div");
+              // Notes initialisieren, falls nicht vorhanden
+              if (typeof take.notes !== "string") take.notes = "";
+              // Good Take initialisieren, falls nicht vorhanden
+              if (typeof take.goodTake !== "boolean") take.goodTake = false;
+
+              takeLine.innerHTML = `<h2>Take ${take.take}</h2>
+              <h3>TC: ${take.timecode}  Roll: ${take.roll}</h3>
+              <label>Notes:</label>
+              <input type="text" id="notes_${index}_${takeIndex}" value="${
+                take.notes || ""
+              }"><br>
+              <label>Good Take:</label>
+              <input type="checkbox" id="goodtake_${index}_${takeIndex}" ${
+                take.goodTake ? "checked" : ""
+              }>`;
+
+              // Notes-Input speichern
+              setTimeout(() => {
+                const notesInput = document.getElementById(
+                  `notes_${index}_${takeIndex}`
+                );
+                if (notesInput) {
+                  notesInput.addEventListener("change", (e) => {
+                    take.notes = e.target.value;
+                  });
+                }
+                // Good Take Checkbox speichern
+                const goodTakeInput = document.getElementById(
+                  `goodtake_${index}_${takeIndex}`
+                );
+                if (goodTakeInput) {
+                  goodTakeInput.addEventListener("change", (e) => {
+                    take.goodTake = e.target.checked;
+                  });
+                }
+              }, 0);
+
+              const deleteTakeBtn = document.createElement("button");
+              deleteTakeBtn.classList.add("fas", "fa-trash");
+              deleteTakeBtn.onclick = () => {
+                if (confirm("Delete this take?")) {
+                  entry.takes.splice(takeIndex, 1);
+                  displayShots();
+                }
+              };
+              takeLine.appendChild(deleteTakeBtn);
+              takesDiv.appendChild(takeLine);
+            });
+
+            div.appendChild(takesDiv);
+          }
+
+          div.append(editBtn, deleteBtn, activateBtn, toggleTakesBtn);
+          container.appendChild(div);
+        });
+      }
+
+      function addTake(newTake, newTc, newRoll, newDate, i) {
+        const shot = currentData.shotlist[i];
+        if (!shot.takes) shot.takes = [];
+        // Prüfen, ob der Take bereits existiert (Vergleich anhand der Take-Nummer)
+        const existingIndex = shot.takes.findIndex(t => t.take === newTake);
+        const newTakeObj = {
+          take: newTake,
+          timecode: newTc,
+          roll: newRoll,
+          date: newDate,
+        };
+        if (existingIndex !== -1) {
+          // Überschreiben
+          shot.takes[existingIndex] = newTakeObj;
+        } else {
+          // Hinzufügen
+          shot.takes.push(newTakeObj);
+        }
+        displayShots();
+      }
+
+      window.addEventListener("load", connectWebSocket);
+    </script>
+  </body>
+</html>
