@@ -1,0 +1,53 @@
+ARC-Slate – Hardware-Komponenten
+=================================
+
+Mikrocontroller
+---------------
+     ESP32-S3-DevKitC-1 (N16R8)        Hauptcontroller (WLAN, I2S, SD_MMC)
+
+Anzeige
+-------
+     MAX7219 8x8-LED-Matrix-Module     7 Stück in Kette (Timecode-Anzeige)
+                                       DIN GPIO38, CS GPIO39, CLK GPIO40
+                                       3x3 Stück für Roll, Scene, Shot und Take Anzeige
+
+     E-Ink-Display 7,5" 800x480        GDEW075T7 (GxEPD2_750_T7) 
+                                       nur im Schaltplan AS1.1 / alter Firmware,
+                                           neue Firmware steuert es noch nicht an
+
+Audio / Timecode
+----------------
+     PCM5102A Audio-DAC (I2S)          LTC-Ausgabe
+                                       BCK GPIO18, LRCK GPIO17, DIN GPIO16, XSMT (Mute) GPIO3
+     LTC-Eingangsstufe                 eingehender Timecode -> GPIO4
+                                       [?] Bauteile (z. B. LM358 + 74HC14 wie bei ARC-Play)
+J15  3,5 mm Klinkenbuchse              Timecode-Ein-/Ausgang
+
+Echtzeituhr
+-----------
+J4   DS3231 RTC-Modul                  I2C: SDA GPIO42, SCL GPIO41, SQW (1 Hz) GPIO5
+     CR2032-Knopfzelle für RTC         
+
+
+Bedienung
+---------
+J5   Hallsensor                       erkennt das Schließen der Klappe
+J16  Taster 1 (90°, eigener Footprint)
+J17  Taster 2 (90°, eigener Footprint)
+J18  Taster 3 (90°, eigener Footprint)
+J14  LED                               Blitz LED für Timecode Sync
+J8   LED-Treiber                       LD06AJSA
+
+Stromversorgung
+---------------
+J9   Power-Anschluss (2-pin)
+     Akku im Batteriefach              
+     Spannungswandler
+
+Mechanik
+--------
+     Platine AS1.1 (eigene Leiterplatte)
+     3D-Druck-Teile: Klappe Gehäuse V2 + Deckel, Batteriefach + Deckel,
+       Matrix-Halterungen (7x1, 3x3), Display-Halterung + Schutzplatte, Zwischendeckel
+     Stiftleisten / Buchsenleisten 2,54 mm (für Module)
+     [?] Klappen-Scharnier, Schrauben, Magnete
