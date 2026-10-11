@@ -79,7 +79,7 @@ pio device monitor -b 115200             # "help" zeigt alle Befehle
 6. **LTC-Ausgang:** **`1`** = Free Run. J2 an Recorder oder Kamera anschließen.
 7. **Jam Sync mit ARC-Play:**
    1. ARC-Play in Free Run, Kabel J2 ↔ J2.
-   2. Slate **`5`** (oder Menü → Modus → „Jam -> Free"). Nach ~3 s lockt die Slate und stellt ihre RTC.
+   2. Slate **`5`** (oder Menü → Modus → „Jam -> Free"). Nach ~3 s lockt die Slate und stellt ihre RTC, danach prüft sie 30 s lang („Jam pruefen“ in der Statuszeile).
    3. Die Statuszeile zeigt „KABEL ABZIEHEN". Kabel ziehen, dann Encoder lang drücken (oder **`u`**).
       Erst danach gibt die Slate wieder TC aus.
 8. **Netz:**
