@@ -22,6 +22,7 @@
 #include "clap.h"
 #include "epaper.h"
 #include "matrix.h"
+#include "matrix_slate.h"
 #include "pins.h"
 #include "slate_link.h"
 #include "spi_bus.h"
@@ -242,7 +243,11 @@ void setup() {
     arc::project::begin();
 
     spibus::begin();
-    mtx::begin();
+    state::lock();
+    const uint8_t brightness = state::settings().brightness;
+    state::unlock();
+    mtx::begin(brightness);
+    slatematrix::begin();
     mtx::showOverlay("ARC SLATE", 0);
     mtx::startTask();
 

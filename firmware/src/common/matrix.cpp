@@ -3,7 +3,6 @@
 #include <SPI.h>
 #include "pins.h"
 #include "spi_bus.h"
-#include "state.h"
 
 namespace {
 
@@ -23,16 +22,12 @@ ChainHw s_chains[2] = {
     { PIN_MTX_DATA_LOAD, 9, {}, {} },
 };
 
-// Data chain layout: which modules show which field. A "flipped" row is
-// mounted rotated by 180° with the chain running backwards (serpentine).
-struct Field { int firstModule; int count; bool flipped; };
-constexpr Field FIELD_ROLL       = { 0, 3, false };
-constexpr Field FIELD_SHOT       = { 3, 3, true };
-constexpr Field FIELD_SCENE_TAKE = { 6, 3, false };
-
 const SPISettings kSpi(1000000, MSBFIRST, SPI_MODE0);
 
 volatile uint8_t s_brightness = 8;
+volatile bool s_enabled = true;
+volatile bool s_enabledDirty = false;
+mtx::Renderer s_renderer = nullptr;
 volatile bool s_brightnessDirty = true;
 volatile uint8_t s_testMode = 0;
 portMUX_TYPE s_ovMux = portMUX_INITIALIZER_UNLOCKED;
@@ -60,7 +55,7 @@ const uint8_t FONT_LETTER[26][5] = {
 };
 
 // Renders text into display columns (left to right). Returns used width.
-int renderText(const char* text, uint8_t* cols, int width, int padLeft, bool gapAfterSecond = false) {
+int renderTextImpl(const char* text, uint8_t* cols, int width, int padLeft, bool gapAfterSecond) {
     memset(cols, 0, width);
     int c = padLeft;
     for (int i = 0; text[i] && c < width; i++) {
@@ -97,7 +92,7 @@ void rotateCW(uint8_t* m) {
 // Puts `width` columns onto `count` modules starting at `first`.
 // Same orientation as the original firmware: module `first` shows the
 // rightmost 8 columns; flipped rows are rotated by 180° and run backwards.
-void placeColumns(ChainHw& ch, const uint8_t* cols, int width, int first, int count, bool flipped) {
+void placeColumnsImpl(ChainHw& ch, const uint8_t* cols, int width, int first, int count, bool flipped) {
     for (int j = 0; j < count; j++) {
         uint8_t m[8];
         for (int k = 0; k < 8; k++) {
@@ -147,43 +142,11 @@ void initChain(ChainHw& ch) {
     flush(ch, true);
 }
 
-void renderField(ChainHw& ch, const Field& f, const char* text, bool gapAfterSecond = false) {
-    uint8_t cols[MAX_MODULES * 8];
-    const int width = f.count * 8;
-    const int used = renderText(text, cols, width, 0, gapAfterSecond);
-    // Center the text inside the field.
-    const int pad = used < width ? (width - used) / 2 : 0;
-    renderText(text, cols, width, pad, gapAfterSecond);
-    placeColumns(ch, cols, width, f.firstModule, f.count, f.flipped);
-}
-
-void renderData() {
-    state::lock();
-    const ShotInfo& s = state::shot();
-    char roll[8], shot[8], sceneTake[8];
-    snprintf(roll, sizeof(roll), "%c%03d", s.cam, s.rollNum);
-    snprintf(shot, sizeof(shot), "%s", s.shot.c_str());
-    snprintf(sceneTake, sizeof(sceneTake), "%2d%2d", s.scene % 100, s.take % 100);
-    state::unlock();
-    ChainHw& ch = s_chains[mtx::CHAIN_DATA];
-    renderField(ch, FIELD_ROLL, roll);
-    renderField(ch, FIELD_SHOT, shot);
-    renderField(ch, FIELD_SCENE_TAKE, sceneTake, true);
-}
-
-void renderTimecode(const arc::Timecode& tc) {
-    char buf[12];
-    snprintf(buf, sizeof(buf), "%02u:%02u:%02u:%02u", tc.h, tc.m, tc.s, tc.f);
-    uint8_t cols[56];
-    renderText(buf, cols, 56, 2);   // 2 + 8x(5+1) + 3x(1+1) = 56 columns
-    placeColumns(s_chains[mtx::CHAIN_TC], cols, 56, 0, 7, false);
-}
-
 void renderOverlay(const char* text) {
     uint8_t cols[56];
-    const int used = renderText(text, cols, 56, 0);
-    renderText(text, cols, 56, used < 56 ? (56 - used) / 2 : 0);
-    placeColumns(s_chains[mtx::CHAIN_TC], cols, 56, 0, 7, false);
+    const int used = renderTextImpl(text, cols, 56, 0, false);
+    renderTextImpl(text, cols, 56, used < 56 ? (56 - used) / 2 : 0, false);
+    placeColumnsImpl(s_chains[mtx::CHAIN_TC], cols, 56, 0, 7, false);
 }
 
 void renderTest(uint8_t mode) {
@@ -194,7 +157,7 @@ void renderTest(uint8_t mode) {
             uint8_t cols[8];
             char num[3];
             snprintf(num, sizeof(num), "%d", d);
-            renderText(num, cols, 8, 2);
+            renderTextImpl(num, cols, 8, 2, false);
             uint8_t m[8];
             for (int k = 0; k < 8; k++) m[k] = cols[7 - k];
             rotateCW(m);
@@ -204,19 +167,16 @@ void renderTest(uint8_t mode) {
 }
 
 void displayTask(void*) {
-    uint32_t lastRev = 0;
-    arc::Timecode lastTc;
-    bool first = true;
+    bool redraw = true;
     uint8_t lastTest = 0;
+    bool wasOverlay = false;
+    bool lastEnabled = true;
     for (;;) {
-        bool dataDirty = false, tcDirty = false;
+        mtx::Result res;
         if (lastTest != s_testMode) {
-            if (lastTest && !s_testMode) { first = true; lastRev = 0; }
+            if (lastTest && !s_testMode) redraw = true;
             lastTest = s_testMode;
         }
-
-        const uint32_t rev = state::revision();
-        if (rev != lastRev) { lastRev = rev; dataDirty = true; }
 
         const uint32_t nowMs = millis();
         portENTER_CRITICAL(&s_ovMux);
@@ -225,55 +185,64 @@ void displayTask(void*) {
             s_overlayActive = overlay = false;
         }
         portEXIT_CRITICAL(&s_ovMux);
-        static bool wasOverlay = false;
-        if (wasOverlay && !overlay) first = true;   // redraw TC after an overlay
+        if (wasOverlay && !overlay) redraw = true;   // redraw the TC chain after an overlay
         wasOverlay = overlay;
 
-        if (s_testMode) {
-            renderTest(s_testMode);
-            tcDirty = dataDirty = true;
-        } else if (overlay) {
-            char text[sizeof(s_overlay)];
-            portENTER_CRITICAL(&s_ovMux);
-            memcpy(text, s_overlay, sizeof(text));
-            portEXIT_CRITICAL(&s_ovMux);
-            renderOverlay(text);
-            tcDirty = true;
-            if (dataDirty) renderData();
-        } else {
-            const arc::Timecode tc = arc::engine::current();
-            if (first || tc.f != lastTc.f || tc.s != lastTc.s || tc.m != lastTc.m || tc.h != lastTc.h) {
-                lastTc = tc;
-                renderTimecode(tc);
-                tcDirty = true;
-            }
-            if (dataDirty) renderData();
+        const bool on = s_enabled;
+        if (on != lastEnabled) {
+            lastEnabled = on;
+            s_enabledDirty = true;
+            if (on) redraw = true;
         }
 
-        if (tcDirty || dataDirty || s_brightnessDirty) {
+        if (!on) {
+            // dark: nothing to render, only the shutdown command below
+        } else if (s_testMode) {
+            renderTest(s_testMode);
+            res.tcDirty = res.dataDirty = true;
+        } else {
+            if (overlay) {
+                char text[sizeof(s_overlay)];
+                portENTER_CRITICAL(&s_ovMux);
+                memcpy(text, s_overlay, sizeof(text));
+                portEXIT_CRITICAL(&s_ovMux);
+                renderOverlay(text);
+                res.tcDirty = true;
+            }
+            if (s_renderer) s_renderer(nowMs, redraw, overlay, res);
+            redraw = false;
+        }
+
+        if (res.tcDirty || res.dataDirty || s_brightnessDirty || s_enabledDirty) {
             spibus::lock();
+            if (s_enabledDirty) {
+                s_enabledDirty = false;
+                for (auto& ch : s_chains) sendAll(ch, REG_SHUTDOWN, on ? 1 : 0);
+                if (on) { flush(s_chains[0], true); flush(s_chains[1], true); }
+            }
             if (s_brightnessDirty) {
                 s_brightnessDirty = false;
                 for (auto& ch : s_chains) sendAll(ch, REG_INTENSITY, s_brightness);
             }
-            // Re-init every few seconds: recovers modules after brown-outs/glitches.
-            static uint32_t lastInit = 0;
-            if (millis() - lastInit > 10000) {
-                lastInit = millis();
-                for (auto& ch : s_chains) {
-                    sendAll(ch, REG_SCAN_LIMIT, 7);
-                    sendAll(ch, REG_DECODE, 0);
-                    sendAll(ch, REG_SHUTDOWN, 1);
+            if (on) {
+                // Re-init every few seconds: recovers modules after brown-outs/glitches.
+                static uint32_t lastInit = 0;
+                if (millis() - lastInit > 10000) {
+                    lastInit = millis();
+                    for (auto& ch : s_chains) {
+                        sendAll(ch, REG_SCAN_LIMIT, 7);
+                        sendAll(ch, REG_DECODE, 0);
+                        sendAll(ch, REG_SHUTDOWN, 1);
+                    }
+                    flush(s_chains[0], true);
+                    flush(s_chains[1], true);
+                } else {
+                    if (res.tcDirty) flush(s_chains[0], false);
+                    if (res.dataDirty) flush(s_chains[1], false);
                 }
-                flush(s_chains[0], true);
-                flush(s_chains[1], true);
-            } else {
-                if (tcDirty) flush(s_chains[0], false);
-                if (dataDirty) flush(s_chains[1], false);
             }
             spibus::unlock();
         }
-        first = false;
         vTaskDelay(pdMS_TO_TICKS(8));
     }
 }
@@ -282,10 +251,8 @@ void displayTask(void*) {
 
 namespace mtx {
 
-void begin() {
-    state::lock();
-    s_brightness = state::settings().brightness;
-    state::unlock();
+void begin(uint8_t brightness) {
+    s_brightness = brightness > 15 ? 15 : brightness;
     spibus::lock();
     initChain(s_chains[0]);
     initChain(s_chains[1]);
@@ -296,10 +263,15 @@ void startTask() {
     xTaskCreatePinnedToCore(displayTask, "MTX", 4096, nullptr, 2, nullptr, 0);
 }
 
+void setRenderer(Renderer renderer) { s_renderer = renderer; }
+
 void setBrightness(uint8_t level) {
     s_brightness = level > 15 ? 15 : level;
     s_brightnessDirty = true;
 }
+
+void setEnabled(bool on) { s_enabled = on; }
+bool enabled() { return s_enabled; }
 
 void showOverlay(const String& text, uint32_t durationMs) {
     char buf[sizeof(s_overlay)];
@@ -319,5 +291,25 @@ void clearOverlay() {
 }
 
 void setTestMode(uint8_t mode) { s_testMode = mode; }
+
+int renderText(const char* text, uint8_t* cols, int width, int padLeft, bool gapAfterSecond) {
+    return renderTextImpl(text, cols, width, padLeft, gapAfterSecond);
+}
+
+void place(Chain chain, const uint8_t* cols, int width, int first, int count, bool flipped) {
+    placeColumnsImpl(s_chains[chain], cols, width, first, count, flipped);
+}
+
+void field(Chain chain, int first, int count, bool flipped, const char* text, bool gapAfterSecond) {
+    uint8_t cols[MAX_MODULES * 8];
+    const int width = count * 8;
+    const int used = renderTextImpl(text, cols, width, 0, gapAfterSecond);
+    // Center the text inside the field.
+    const int pad = used < width ? (width - used) / 2 : 0;
+    renderTextImpl(text, cols, width, pad, gapAfterSecond);
+    placeColumnsImpl(s_chains[chain], cols, width, first, count, flipped);
+}
+
+void clear(Chain chain) { memset(s_chains[chain].next, 0, sizeof(s_chains[chain].next)); }
 
 }  // namespace mtx

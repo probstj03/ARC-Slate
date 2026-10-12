@@ -1,5 +1,5 @@
 #include "epaper.h"
-#include <GxEPD2_BW.h>
+#include "epd_driver.h"
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
@@ -16,11 +16,12 @@
 
 namespace {
 
-GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> s_display(
-    GxEPD2_750_T7(PIN_EPD_CS, PIN_EPD_DC, PIN_EPD_RST, PIN_EPD_BUSY));
+epddrv::Display& s_display = epddrv::display();
+using epddrv::printAt;
+using epddrv::printCentered;
 
 // Layout (pixels). Partial windows must start/end on multiples of 8 in x.
-constexpr int W = 800, H = 480;
+constexpr int W = epddrv::W, H = epddrv::H;
 constexpr int LEFT_W = 336;                 // production column
 constexpr int RIGHT_X = 344, RIGHT_W = W - RIGHT_X;
 constexpr int STATUS_Y = 448, STATUS_H = H - STATUS_Y;
@@ -55,27 +56,6 @@ bool makeQr(const String& text) {
     cfg.qrcode_ecc_level = ESP_QRCODE_ECC_MED;
     s_qrSize = 0;
     return esp_qrcode_generate(&cfg, text.c_str()) == ESP_OK && s_qrSize > 0;
-}
-
-// The panel can take seconds; give the bus to the LED matrices meanwhile.
-void busyCallback(const void*) {
-    spibus::unlock();
-    vTaskDelay(pdMS_TO_TICKS(5));
-    spibus::lock();
-}
-
-void printAt(int x, int y, const GFXfont* font, const String& text) {
-    s_display.setFont(font);
-    s_display.setCursor(x, y);
-    s_display.print(text);
-}
-
-void printCentered(int cx, int y, const GFXfont* font, const String& text) {
-    int16_t bx, by; uint16_t bw, bh;
-    s_display.setFont(font);
-    s_display.getTextBounds(text, 0, 0, &bx, &by, &bw, &bh);
-    s_display.setCursor(cx - (int)bw / 2 - bx, y);
-    s_display.print(text);
 }
 
 void drawStatus() {
@@ -232,10 +212,8 @@ namespace epd {
 
 void begin() {
     s_viewMtx = xSemaphoreCreateMutex();
+    epddrv::init();
     spibus::lock();
-    s_display.init(0, true, 2, false);
-    s_display.epd2.setBusyCallback(busyCallback);
-    s_display.setRotation(0);
     s_display.setFullWindow();
     s_display.fillScreen(GxEPD_WHITE);
     s_display.drawInvertedBitmap(0, 0, bootscreen_V2, W, H, GxEPD_BLACK);
