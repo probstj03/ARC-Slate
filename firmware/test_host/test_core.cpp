@@ -4,7 +4,9 @@
 #include <string.h>
 #include <string>
 #include <vector>
+#include <stdlib.h>
 #include "agenda.h"
+#include "anim.h"
 #include "civil.h"
 #include "fold.h"
 #include "ics.h"
@@ -382,6 +384,71 @@ static void testWeather() {
     CHECK(!bad.valid);
 }
 
+static int lit(const Canvas& c) {
+    int n = 0;
+    for (int y = 0; y < kFieldH; y++)
+        for (int x = 0; x < kFieldW; x++) n += c.get(x, y);
+    return n;
+}
+
+static void testAnim() {
+    const bool preview = getenv("ARC_PREVIEW") != nullptr;
+    char buf[400];
+    const WxKind kinds[] = {WxKind::Clear, WxKind::PartlyCloudy, WxKind::Cloudy, WxKind::Fog, WxKind::Drizzle,
+                            WxKind::Rain, WxKind::Showers, WxKind::Snow, WxKind::Thunder, WxKind::Unknown};
+    for (WxKind k : kinds) {
+        for (int day = 0; day < 2; day++) {
+            int changes = 0;
+            Canvas prev;
+            for (uint32_t f = 0; f < 40; f++) {
+                Canvas c;
+                drawWeather(c, k, day == 1, f);
+                CHECK(lit(c) > 0);
+                if (f > 0 && memcmp(prev.col, c.col, sizeof(c.col)) != 0) changes++;
+                prev = c;
+                if (preview && f < 4 && day == 1) {
+                    dump(c, buf, sizeof(buf));
+                    printf("%s frame %u:\n%s\n", kindName(k), (unsigned)f, buf);
+                }
+            }
+            if (k != WxKind::Unknown) CHECK(changes > 5);   // it really animates (the "?" stays still)
+        }
+    }
+    // moon: full is brighter than new; waxing is lit on the right, waning on the left
+    Canvas nm, fm, wax, wan;
+    drawMoon(nm, 8, 0.0);
+    drawMoon(fm, 8, 0.5);
+    drawMoon(wax, 8, 0.25);
+    drawMoon(wan, 8, 0.75);
+    CHECK(lit(fm) > lit(nm) + 20);
+    int waxLeft = 0, waxRight = 0, wanLeft = 0, wanRight = 0;
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 4; x++) { waxLeft += wax.get(8 + x, y); wanLeft += wan.get(8 + x, y); }
+        for (int x = 4; x < 8; x++) { waxRight += wax.get(8 + x, y); wanRight += wan.get(8 + x, y); }
+    }
+    CHECK(waxRight > waxLeft);
+    CHECK(wanLeft > wanRight);
+    if (preview) {
+        dump(wax, buf, sizeof(buf));
+        printf("moon first quarter:\n%s\n", buf);
+        dump(fm, buf, sizeof(buf));
+        printf("moon full:\n%s\n", buf);
+    }
+
+    Canvas up, down;
+    drawSunEvent(up, true, 8);
+    drawSunEvent(down, false, 8);
+    CHECK(memcmp(up.col, down.col, sizeof(up.col)) != 0);
+    Canvas riseStart, riseEnd;
+    drawSunEvent(riseStart, true, 0);
+    drawSunEvent(riseEnd, true, 8);
+    CHECK(lit(riseEnd) > lit(riseStart));
+    if (preview) {
+        dump(riseEnd, buf, sizeof(buf));
+        printf("sunrise:\n%s\n", buf);
+    }
+}
+
 int main() {
     testCivil();
     testFold();
@@ -390,6 +457,7 @@ int main() {
     testTodo();
     testAgenda();
     testWeather();
+    testAnim();
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "OK", g_checks, g_fail);
     return g_fail ? 1 : 0;
 }

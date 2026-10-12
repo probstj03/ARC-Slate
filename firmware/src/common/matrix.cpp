@@ -54,6 +54,13 @@ const uint8_t FONT_LETTER[26][5] = {
     {0x60, 0x10, 0x0F, 0x10, 0x60}, {0x43, 0x45, 0x49, 0x51, 0x61},
 };
 
+// Extra glyphs: % / + ? (5 wide) and the degree ring written as '^' (3 wide).
+const uint8_t FONT_PERCENT[5] = {0x63, 0x13, 0x08, 0x64, 0x63};
+const uint8_t FONT_SLASH[5] = {0x60, 0x10, 0x08, 0x04, 0x03};
+const uint8_t FONT_PLUS[5] = {0x08, 0x08, 0x3E, 0x08, 0x08};
+const uint8_t FONT_QUESTION[5] = {0x02, 0x01, 0x51, 0x09, 0x06};
+const uint8_t FONT_DEGREE[3] = {0x20, 0x50, 0x20};
+
 // Renders text into display columns (left to right). Returns used width.
 int renderTextImpl(const char* text, uint8_t* cols, int width, int padLeft, bool gapAfterSecond) {
     memset(cols, 0, width);
@@ -68,6 +75,11 @@ int renderTextImpl(const char* text, uint8_t* cols, int width, int padLeft, bool
         else if (ch == ':') { narrow = 0x14; w = 1; }
         else if (ch == '.') { narrow = 0x01; w = 1; }
         else if (ch == '-') { w = 3; }
+        else if (ch == '%') glyph = FONT_PERCENT;
+        else if (ch == '/') glyph = FONT_SLASH;
+        else if (ch == '+') glyph = FONT_PLUS;
+        else if (ch == '?') glyph = FONT_QUESTION;
+        else if (ch == '^') { glyph = FONT_DEGREE; w = 3; }
         else { w = 3; }   // space and unknown characters
         if (c + w > width) break;
         for (int k = 0; k < w; k++) {
