@@ -184,7 +184,8 @@ Die bekannten WLANs sind dieselben wie bei der Slate (NVS, werden in ARC-Studio 
 HTTPS wird gegen eine kuratierte Liste gängiger Wurzelzertifikate geprüft (`src/clock/ca_roots.h`, erzeugt mit
 `tools/gen_ca_roots.py`). Für eine eigene CA (selbst gehostete Nextcloud) die PEM-Datei als `/ca.pem` ins LittleFS legen
 (`pio run -e clock -t uploadfs` mit einem `data/`-Ordner). Nur wenn gar nichts anderes geht: `nc insecure 1` schaltet die
-Prüfung ab. Das App-Passwort geht dann im Klartext-Zertifikatsvertrauen raus, nur im eigenen LAN verwenden.
+Prüfung ab. Die Verbindung bleibt verschlüsselt, aber der Server wird nicht mehr geprüft (Man-in-the-middle möglich).
+Nur im eigenen LAN verwenden.
 
 ### Entwicklung ohne Hardware
 

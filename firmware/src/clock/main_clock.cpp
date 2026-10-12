@@ -26,8 +26,10 @@
 
 #if __has_include("secrets.h")
 #include "secrets.h"
+constexpr int kDefaultWifiCount = sizeof(kDefaultWifi) / sizeof(kDefaultWifi[0]);
 #else
-static const arc::net::DefaultNetwork kDefaultWifi[] = {{"", "", 0}};
+static const arc::net::DefaultNetwork kDefaultWifi[] = {{"", "", 0}};   // placeholder, no default network
+constexpr int kDefaultWifiCount = 0;
 static const char* const kArcNetPassword = "arc-net-2026";
 #endif
 
@@ -312,7 +314,7 @@ void setup() {
     nc.caps = kCaps;
     nc.capCount = 1;
     nc.defaults = kDefaultWifi;
-    nc.defaultCount = sizeof(kDefaultWifi) / sizeof(kDefaultWifi[0]);
+    nc.defaultCount = kDefaultWifiCount;
     nc.arcNetPassword = kArcNetPassword;
     nc.fillStatus = fillStatus;
     nc.ltcEngine = false;
