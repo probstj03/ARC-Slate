@@ -125,3 +125,80 @@ Die Auswahl bleibt über Neustarts erhalten (`otadata`).
 - **ARC-Studio:** Die aktuelle Version versteht `newTake` (wird beim Klappen zusätzlich gesendet),
   `nextShot`/`previousShot` und `status`. Die neuen Nachrichten sind `hello`, `event`, `slateState`,
   `pong`, `wifi_config_ack` sowie geplante Befehle mit `at`. ARC-Studio wertet sie mit Teil H des Plans aus.
+
+## ARC-Clock (Uhr und Kalender)
+
+Zweite Firmware für dieselbe Hardware (`src/clock/`, Umgebung `clock`). Aus der Klappe wird eine Schreibtischuhr:
+
+| Klappe | Anzeige |
+|---|---|
+| **offen** | LED-Matrizen: oben `HH:MM:SS` (RTC-genau) mit Sekundenbalken in der obersten Zeile. Darunter links eine **Wetter-Animation**, in der Mitte Temperatur / gefühlt / Regen / Wind, rechts Mond, nächster Termin, Datum und Sonnenauf-/-untergang im Wechsel. |
+| **geschlossen** | Matrizen aus. Das **E-Ink** zeigt die Tagesübersicht: Datum, Mondphase, Wetter mit Sonnenaufgang/-untergang und Tagesverlauf, Termine der nächsten Tage (Nextcloud), To-Do-Liste (Obsidian). |
+
+Das E-Ink hat **keine Uhr** und wird nur **einmal am Tag** voll aktualisiert (Standard 05:30, `epdtime HH:MM`),
+dazu nach einem Stromausfall, wenn der Tagesstand fehlt, und auf Befehl (`epd`). Es wird nie bei offener Klappe
+angefasst. Alles Schnelle läuft auf den Matrizen.
+
+**Matrizen im Detail:** 10 Minuten vor einem Termin läuft sein Titel als Laufschrift über die Zeitanzeige und das rechte
+Feld blinkt (`remind MIN`). Beim ersten Öffnen am Tag funkeln alle Module kurz. Die Helligkeit wechselt zwischen
+Sonnenauf- und -untergang (Tag/Nacht getrennt einstellbar).
+
+**Encoder:** drehen = Helligkeit, kurz drücken = nächste Info-Seite, lang drücken = zur Klappen-Firmware wechseln.
+
+### Einrichtung
+
+Zugangsdaten stehen nie im Repo. Entweder einmalig vorbelegen (`cp src/clock/secrets.example.h src/clock/secrets.h`,
+wird nur beim ersten Start gelesen) oder über die serielle Konsole eingeben:
+
+```
+nc url https://cloud.example.org
+nc user julian
+nc pass xxxxx-xxxxx-xxxxx-xxxxx-xxxxx      # App-Passwort (Nextcloud: Einstellungen > Sicherheit), nicht das Login-Passwort
+cal add /remote.php/dav/calendars/julian/personal/
+todo path Notizen/ToDo.md                  # Pfad der Obsidian-Datei in den Nextcloud-Dateien
+todo head Heute                            # optional: nur Aufgaben unter dieser Überschrift
+loc 52.52 13.405 Berlin                    # Standort für das Wetter
+fetch                                      # alles jetzt abrufen und anzeigen (zeigt auch Fehler im Klartext)
+epd force                                  # E-Ink sofort aktualisieren
+```
+
+`help` listet alle Befehle, `cfg` zeigt die Einstellungen (Passwort maskiert), `?` den Zustand der Datenquellen.
+Die bekannten WLANs sind dieselben wie bei der Slate (NVS, werden in ARC-Studio gepflegt oder mit `wifi add` gesetzt).
+
+### Datenquellen
+
+- **Kalender:** CalDAV-`REPORT` mit `<c:expand>`. Die Nextcloud löst Wiederholungen auf, die Firmware braucht keinen
+  RRULE-Parser. Mehrere Kalender möglich (`cal add` mehrfach). Abruf alle 15 min.
+- **To-Do:** WebDAV-`GET` der Markdown-Datei mit ETag (unverändert = 304). Erkannt werden `- [ ]` und `* [/]`, Fälligkeiten der
+  Obsidian-Tasks-Erweiterung (`📅 2026-10-15`, `⏳`), Dataview-Felder (`[due:: 2026-10-15]`) und Prioritäten (⏫ 🔼).
+  Sortierung: überfällig, heute, 7 Tage, später, ohne Datum. Nur Anzeige (kein Zurückschreiben).
+- **Wetter:** [Open-Meteo](https://open-meteo.com) (kein Schlüssel nötig), alle 30 min.
+- **Mond:** lokal berechnet.
+- Der letzte gute Stand liegt in LittleFS (`/clock_cache.bin`) und erscheint nach einem Neustart sofort. Fehlt der
+  Abruf, steht in der Fußzeile des E-Inks ein „!" hinter der Quelle, bei einem Fehler zusätzlich der Grund.
+- Abrufe laufen nur in einem **echten WLAN mit Internet** (nicht in ARC-Net) und nacheinander (TLS braucht viel RAM).
+- Sonderzeichen: Die E-Ink-Schriften haben keine Umlaute. Texte werden zu ASCII gefaltet (ä→ae, ß→ss, Emoji entfallen).
+
+### Sicherheit der Verbindung
+
+HTTPS wird gegen eine kuratierte Liste gängiger Wurzelzertifikate geprüft (`src/clock/ca_roots.h`, erzeugt mit
+`tools/gen_ca_roots.py`). Für eine eigene CA (selbst gehostete Nextcloud) die PEM-Datei als `/ca.pem` ins LittleFS legen
+(`pio run -e clock -t uploadfs` mit einem `data/`-Ordner). Nur wenn gar nichts anderes geht: `nc insecure 1` schaltet die
+Prüfung ab. Das App-Passwort geht dann im Klartext-Zertifikatsvertrauen raus, nur im eigenen LAN verwenden.
+
+### Entwicklung ohne Hardware
+
+`py test_host/run.py` baut und prüft die reinen Module (`src/clock/core/`: Datum/Zeitzone, iCal/CalDAV, To-Do, Wetter,
+Mond, Agenda, Animationen) auf dem PC und rendert das E-Ink-Layout mit der echten Adafruit-GFX-Bibliothek nach
+`test_host/out/epd_preview*.png`. Gebraucht werden ein C++-Compiler (`g++`/`clang++`, sonst `pip install ziglang`) und Pillow.
+Einmal vorher `pio run -e clock`, damit die Bibliotheken in `.pio/libdeps` liegen.
+
+### Stand der Uhr
+
+- Gebaut (ohne Warnungen) und am PC getestet, **noch nicht auf der Hardware**. Beim ersten Test prüfen:
+  - Ausrichtung der Anzeige: Sekundenbalken in der **obersten** Zeile, Wetter-Animation richtig herum
+  - Klappe offen/zu schaltet die Matrizen
+  - `fetch` gegen die eigene Nextcloud (Login, Kalenderpfad, To-Do-Datei)
+  - ein kompletter Tageszyklus des E-Inks
+- Nicht enthalten: Schlafmodus für Akkubetrieb (die Uhr nimmt dauerhafte Versorgung an), Abhaken von Aufgaben auf dem Gerät,
+  ARC-Studio-Karte für die Uhr (ARC-Studio ignoriert den Gerätetyp `clock`).
