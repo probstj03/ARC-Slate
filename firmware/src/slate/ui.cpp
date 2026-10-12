@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "bootsel.h"
 #include "clap.h"
 #include "epaper.h"
 #include <ArcCore.h>
@@ -39,10 +40,10 @@ void IRAM_ATTR isrEncoder() {
 }
 
 // ── menu model ────────────────────────────────────────────────────────────
-enum Item { IT_TAKE, IT_SHOT, IT_SCENE, IT_ROLL, IT_CAM, IT_MODE, IT_RATE, IT_BRIGHT, IT_FLASH, IT_INFO, IT_DONE, IT_COUNT };
+enum Item { IT_TAKE, IT_SHOT, IT_SCENE, IT_ROLL, IT_CAM, IT_MODE, IT_RATE, IT_BRIGHT, IT_FLASH, IT_APP, IT_INFO, IT_DONE, IT_COUNT };
 const char* const kItemNames[IT_COUNT] = {"Take", "Shot", "Szene", "Roll", "Kamera", "Modus",
-                                          "Bildrate", "Helligkeit", "Blitz testen", "Info", "Fertig"};
-const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "HELL", "", "", ""};
+                                          "Bildrate", "Helligkeit", "Blitz testen", "Uhr-Modus", "Info", "Fertig"};
+const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "HELL", "", "", "", ""};
 
 using arc::engine::Mode;
 using arc::TcRate;
@@ -204,6 +205,11 @@ void onShortPress() {
         switch (s_sel) {
             case IT_DONE: closeMenu(); return;
             case IT_FLASH: clap::testFlash(); return;
+            case IT_APP:
+                // Boots the other firmware (ARC-Clock); no return on success.
+                mtx::showOverlay("UHR", 0);
+                if (!bootsel::switchToOther()) mtx::showOverlay("UHR FEHLT", 2500);
+                return;
             case IT_INFO: epd::requestStatus(); return;
             case IT_MODE: s_pendingIndex = indexOfMode(arc::engine::mode()); break;
             case IT_RATE: s_pendingIndex = indexOfRate(arc::engine::rate()); break;

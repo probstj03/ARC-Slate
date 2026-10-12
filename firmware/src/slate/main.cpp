@@ -18,6 +18,7 @@
 #include <Arduino.h>
 #include <ArcCore.h>
 #include <Wire.h>
+#include "bootsel.h"
 #include "clap.h"
 #include "epaper.h"
 #include "matrix.h"
@@ -217,6 +218,10 @@ void handleSerial() {
             arc::net::clearNetworks();
         }
         arc::net::printNetworks(Serial);
+    }
+    else if (cmd == "mode") {
+        if (arg == "clock") bootsel::switchTo(bootsel::App::Clock);
+        else Serial.println("mode clock  – ARC-Clock starten");
     }
     else if (cmd == "log") {
         if (arg == "clear") { arc::events::clear(); Serial.println("Log gelöscht"); }

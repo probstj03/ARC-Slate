@@ -25,7 +25,7 @@ Zeitpunkt protokolliert die Slate mit Timecode. Gesteuert wird sie aus **ARC-Stu
 - **Gehäuse:** `hardware/3D-Objekte` (FreeCAD + STL + G-Code)
 - `hardware/AS1.1`: alte Platine mit klassischem ESP32, **stillgelegt**, nur noch als Referenz
 
-## Firmware (v2.0.0-dev)
+## Firmware (v2.1.0-dev)
 
 PlatformIO-Projekt in `firmware/` (Arduino-Framework, ESP32-S3). Zeitbasis, Timecode, Jam Sync und
 Netzwerk kommen aus **[ARC-Core](https://github.com/probstj03/ARC-Core)**. Das Repo muss neben
@@ -43,10 +43,33 @@ Netzwerk kommen aus **[ARC-Core](https://github.com/probstj03/ARC-Core)**. Das R
 
 ```bash
 cd firmware
-cp src/secrets.example.h src/secrets.h   # einmalig: eigene WLANs eintragen
-pio run -t upload
-pio device monitor -b 115200             # "help" zeigt alle Befehle
+cp src/slate/secrets.example.h src/slate/secrets.h   # einmalig: eigene WLANs eintragen
+pio run -e slate -t upload      # erstes Mal: Bootloader, Partitionstabelle und die Slate-App (ota_0)
+pio device monitor -b 115200    # "help" zeigt alle Befehle
 ```
+
+### Zwei Firmwares auf einem Gerät
+
+Auf dem ESP32-S3 (16 MB) liegen zwei Apps (`partitions_16mb_dual.csv`). Es läuft immer nur eine, die andere bleibt im Flash.
+
+| Partition | Firmware | Quellcode | Build/Upload |
+|---|---|---|---|
+| `ota_0` | **ARC-Slate** (Filmklappe) | `src/slate/` | `pio run -e slate -t upload` |
+| `ota_1` | **ARC-Clock** (Uhr/Kalender) | `src/clock/` | `pio run -e clock -t upload` (schreibt nur die App, ändert die Auswahl nicht) |
+| – | gemeinsam: Pins, SPI, App-Wechsel | `src/common/` | |
+
+NVS (u. a. bekannte WLANs) und LittleFS sind für beide gemeinsam.
+
+**Umschalten:**
+- Slate-Menü „Uhr-Modus" bzw. seriell `mode clock`
+- ARC-Clock: seriell `mode slate`
+- beim Einschalten den Encoder-Knopf ≥ 1,5 s gedrückt halten wechselt zur jeweils anderen Firmware (Notausstieg)
+
+Ist die andere App nicht installiert, bleibt das Gerät in der aktuellen Firmware und meldet das auf der Anzeige und seriell.
+Die Auswahl bleibt über Neustarts erhalten (`otadata`).
+
+> Beim ersten Flashen mit der neuen Partitionstabelle wird LittleFS verschoben: `/project.json` und `/events.jsonl`
+> auf dem Gerät gehen verloren. Takes vorher in ARC-Studio abholen und das Projekt danach neu senden.
 
 ### Bedienung (Drehencoder)
 
@@ -54,7 +77,7 @@ pio device monitor -b 115200             # "help" zeigt alle Befehle
   - Drehen = Take −/+ (kurz als „TAKE n" auf der Timecode-Anzeige)
   - Kurz drücken = Menü auf dem E-Ink
   - Lang drücken = nach einem Jam „Kabel abgezogen" bestätigen, im Record Run Start/Stop
-- **Menü:** Take · Shot · Szene · Roll · Kamera · Modus · Bildrate · Helligkeit · Blitz testen · Info · Fertig
+- **Menü:** Take · Shot · Szene · Roll · Kamera · Modus · Bildrate · Helligkeit · Blitz testen · Uhr-Modus · Info · Fertig
   - Drehen = wählen, Drücken = bearbeiten, Lang drücken = schließen
   - Beim Bearbeiten: Drehen = Wert, Drücken = übernehmen, Lang drücken = verwerfen
   - Nach 10 s ohne Eingabe schließt sich das Menü.
@@ -75,7 +98,7 @@ pio device monitor -b 115200             # "help" zeigt alle Befehle
    - **`mtx 2`** zeigt in jedem Modul seine Nummer. Erwartet:
      - Timecode-Kette: Modul 0 ganz rechts.
      - Daten-Kette: 0–2 Roll, 3–5 Shot (Reihe um 180° gedreht), 6–8 Szene/Take.
-   - Passt die Anordnung nicht, die Tabelle `FIELD_*` in `src/matrix.cpp` anpassen.
+   - Passt die Anordnung nicht, die Tabelle `FIELD_*` in `src/slate/matrix.cpp` anpassen.
    - **`mtx 1`** = alle LEDs an (Strom am Akku messen). **`mtx 0`** = normal.
 4. **Encoder:** **`enc`** schaltet die Debug-Ausgabe ein. Läuft die Drehrichtung falsch: **`encrev`** und neu starten.
 5. **Klappe:** Schließen → Blitz für 1 Frame, die LEDs halten den Klappen-TC 2,5 s. Öffnen → Take + 1.
