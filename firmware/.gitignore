@@ -6,3 +6,7 @@
 
 # Lokale WLAN-Zugangsdaten
 src/**/secrets.h
+
+# Host-Testprogramm
+test_host/test_core
+test_host/test_core.exe
