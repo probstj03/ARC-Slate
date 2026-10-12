@@ -5,31 +5,9 @@
 // WiFi network (not ARC-Net) is connected and the clock is plausible (certificate validity).
 // The last good data is cached on LittleFS and shown immediately after a reboot.
 #include <Arduino.h>
-#include "core/agenda.h"
-#include "core/todo.h"
-#include "core/weather.h"
+#include "core/data_model.h"
 
 namespace clockdata {
-
-constexpr int kMaxTasks = 32;
-
-enum Source : uint8_t { SRC_CALENDAR = 0, SRC_TODO = 1, SRC_WEATHER = 2, SRC_COUNT = 3 };
-
-struct SourceState {
-    bool ok = false;           // the data shown is from a successful fetch (possibly from the cache)
-    int64_t at = 0;            // local seconds of the last success
-    int64_t tried = 0;         // local seconds of the last attempt
-    uint32_t revision = 0;     // bumped when the content changed
-    char error[48] = {0};      // reason of the last failure ("" = none)
-};
-
-struct Data {
-    ac::Agenda agenda;
-    ac::Task tasks[kMaxTasks];
-    int taskCount = 0;
-    ac::Weather weather;
-    SourceState src[SRC_COUNT];
-};
 
 void begin();                // loads the cache
 void startTask();
