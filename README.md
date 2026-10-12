@@ -61,6 +61,10 @@ pio device monitor -b 115200             # "help" zeigt alle Befehle
 - Menü und Statuszeile nutzen die E-Ink-Teil-Aktualisierung. Die Klappenkarte mit QR-Code wird
   komplett neu gezeichnet, 1,5 s nach der letzten Take-Änderung.
 - Solange das Menü offen ist, ist die Klappe gesperrt (kein Blitz).
+- **Offline:**
+  - Mit einem Projekt aus ARC-Studio („Projekt auf Geräte“) blättert der Menüpunkt „Shot“ ohne Verbindung
+    durch die gespeicherte Shotliste. Die nächste Take-Nummer kommt aus dem eigenen Klappen-Log.
+  - Beim nächsten Verbinden holt ARC-Studio die Klappen ab.
 
 ### Inbetriebnahme – Testreihenfolge
 

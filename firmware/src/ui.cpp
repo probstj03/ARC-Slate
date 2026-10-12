@@ -190,6 +190,8 @@ void onTurn(int steps) {
     } else if (s_sel == IT_SHOT && arc::net::studioConnected()) {
         // ARC-Studio owns the shot list: ask it for the neighbouring shot.
         slate::requestShotStep(steps > 0 ? 1 : -1);
+    } else if (s_sel == IT_SHOT && slate::stepShotOffline(steps > 0 ? 1 : -1)) {
+        // offline project: next/previous shot of the stored shot list
     } else {
         stepValue(s_sel, steps);
     }

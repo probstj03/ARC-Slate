@@ -234,6 +234,7 @@ void setup() {
 
     state::begin();
     arc::events::begin();
+    arc::project::begin();
 
     spibus::begin();
     mtx::begin();

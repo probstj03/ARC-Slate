@@ -11,6 +11,8 @@ void loop();
 
 void sendSlateState();          // values changed at the device
 void requestShotStep(int dir);  // ask ARC-Studio for the next/previous shot
+// Without ARC-Studio: step through the offline project (false = no project stored).
+bool stepShotOffline(int dir);
 void updateUserBits();          // shot (or date) user bits -> generator
 String statusLine();            // e-ink status bar
 
