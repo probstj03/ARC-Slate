@@ -34,7 +34,7 @@ void drawAll(int64_t now) {
     spibus::lock();
     d.setFullWindow();
     epdlayout::draw(d, *s_snap, now, opt);
-    d.display(false);                       // the bus is released while the panel is busy (busy callback)
+    epddrv::refreshFull();                  // matrix pause, failure check and recovery: see epd_driver.h
     spibus::unlock();
 }
 

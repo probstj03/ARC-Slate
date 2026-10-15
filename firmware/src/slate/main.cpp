@@ -71,6 +71,7 @@ void printHelp() {
         "  mtx 0|1|2        Matrix normal / alle LEDs / Modulnummern\n"
         "  epd              E-Ink neu zeichnen\n"
         "  epdtest          E-Ink Testbild | epdspi HZ  E-Ink-Takt setzen (Standard 2000000)\n"
+        "  epdpause 0|1|2   Matrix-Pause beim E-Ink-Refresh: aus / nur Booster-Start (Standard) / ganzer Refresh\n"
         "  enc / encrev     Encoder-Debug / Drehrichtung umkehren\n"
         "  i2c              I2C-Scan\n"
         "  take N | scene N | shot X | roll A001 | bright 0-15\n"
@@ -195,6 +196,22 @@ void handleSerial() {
     else if (cmd == "epdtest") epd::requestTest();
     else if (cmd == "epdpins") epd::probePins();
     else if (cmd == "epdlab") epd::requestLab();
+    else if (cmd == "epdrecover") {
+        const int sp2 = arg.indexOf(' ');
+        const int sec = constrain((sp2 < 0 ? arg : arg.substring(0, sp2)).toInt(), 1, 60);
+        epd::recoveryTest(sec, arg.indexOf("wifioff") >= 0);
+    }
+    else if (cmd == "epdresume") {
+        epddrv::resume();
+        Serial.println("E-ink refreshes allowed again");
+        epd::requestCard();
+    }
+    else if (cmd == "epdpause") {
+        if (arg.length()) epddrv::setPause((epddrv::Pause)constrain(arg.toInt(), 0, 2));
+        const epddrv::Stats st = epddrv::stats();
+        Serial.println(String("Matrix pause around e-ink refreshes: ") + epddrv::pauseName(epddrv::pause()) +
+                       "  (0 off, 1 power-on, 2 full) | refreshes " + st.refreshes + ", booster failures " + st.failures + (epddrv::suspended() ? " - SUSPENDED (epdresume)" : ""));
+    }
     else if (cmd == "epdpartial") { epd::setPartial(arg.toInt() != 0); }
     else if (cmd == "epdspi") {
         if (arg.toInt() > 0) epddrv::setSpiHz((uint32_t)arg.toInt());

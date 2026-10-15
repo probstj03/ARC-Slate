@@ -227,7 +227,7 @@ Serielle Hilfsbefehle (Monitor, 115200 Baud):
 | `epdpins` | BUSY/RST prüfen: Ein lebendes Panel zieht BUSY beim Reset kurz auf 0 |
 | `epdlab` | dasselbe Bild mit 4 SPI-Takten × Matrizen an/aus, die Einstellung steht im Bild |
 | `epdspi HZ` | E-Ink-SPI-Takt setzen (Standard 2 MHz, 4 MHz war unzuverlässig) |
-| `epdpartial 0\|1` | Teil-Refresh für Menü/Statuszeile (Standard aus: jede Änderung ist ein voller Refresh) |
+| `epdpartial 0\|1` | Teil-Refresh für Menü/Statuszeile (Standard an; aus = jede Änderung ist ein voller Refresh) |
 | `epd` | Karte neu zeichnen |
 
 `py tools/gen_logo.py` erzeugt Logo und Startbild neu aus `ARC-Server/server/css/logo.png`.

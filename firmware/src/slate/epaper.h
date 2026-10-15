@@ -28,6 +28,7 @@ void showMenu(const MenuView& view);
 void setPartial(bool on);   // partial refresh for menu / status bar (default off)
 bool partialEnabled();
 void probePins();         // serial: epdpins (BUSY / RST check)
+void recoveryTest(int seconds, bool wifiOff);   // serial: epdrecover SEC [wifioff]
 void requestLab();           // serial: epdlab (same picture, different SPI clocks / matrices on/off)
 void requestTest();    // hardware test picture (serial: epdtest)
 void closeMenu();      // back to the slate card

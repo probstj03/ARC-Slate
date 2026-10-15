@@ -8,6 +8,7 @@
 #include <Fonts/FreeSansOblique18pt7b.h>
 #include <qrcode.h>   // ESP-IDF esp_qrcode
 #include <ArcCore.h>
+#include <WiFi.h>
 #include "assets/bootscreen.h"
 #include "assets/logo.h"
 #include "pins.h"
@@ -174,7 +175,7 @@ void renderTestPattern() {
     printCentered(W / 2, 200, &FreeSansBold24pt7b, "ARC-SLATE E-INK TEST");
     printCentered(W / 2, 240, &FreeSansBold12pt7b, String("800x480  SPI ") + String(epddrv::spiHz() / 1000) + " kHz");
     printCentered(W / 2, 280, &FreeSans9pt7b, "lines, ruler, stripes and checkerboard must be sharp and undistorted");
-    s_display.display(false);
+    epddrv::refreshFull();
     s_partials = 0;
 }
 
@@ -188,7 +189,7 @@ void runLab() {
         for (int matricesOn = 1; matricesOn >= 0; matricesOn--) {
             n++;
             epddrv::setSpiHz(hz);
-            epddrv::MatrixPause pause(!matricesOn);
+            epddrv::MatrixPause pause(!matricesOn);   // raw refresh below: the lab compares on/off without the driver logic
             spibus::lock();
             s_display.setFullWindow();
             s_display.fillScreen(GxEPD_WHITE);
@@ -221,32 +222,31 @@ void renderCard() {
     drawRightPanelCard(s, roll);
     drawStatus();
     const uint32_t t0 = millis();
-    s_display.display(false);
+    epddrv::refreshFull();
     s_partials = 0;
     Serial.println(String("[EPD] card drawn in ") + (millis() - t0) + " ms");
 }
 
-// Partial refresh is switched off until it is proven to look right on this panel (serial: epdpartial 1):
-// without it every change is a full refresh (about 4 s) but the picture cannot get garbled.
-bool s_partialOk = false;
+// Partial refresh for the menu and the status bar (~0.5 s instead of a full refresh). Serial: epdpartial 0|1.
+// After PARTIALS_BEFORE_FULL partial updates a full refresh clears the ghosting.
+bool s_partialOk = true;
 
 void partial(int x, int y, int w, int h) {
     if (!s_partialOk || ++s_partials > PARTIALS_BEFORE_FULL) {
-        s_display.display(false);
+        epddrv::refreshFull();
         s_partials = 0;
     } else {
-        s_display.displayWindow(x, y, w, h);
+        epddrv::refreshWindow(x, y, w, h);
     }
 }
 
 void drawBootPicture() {
-    epddrv::MatrixPause pause;
     spibus::lock();
     s_display.setFullWindow();
     s_display.fillScreen(GxEPD_WHITE);
     s_display.drawInvertedBitmap(0, 0, bootscreen_V2, W, H, GxEPD_BLACK);
     const uint32_t t0 = millis();
-    s_display.display(false);
+    epddrv::refreshFull();
     spibus::unlock();
     Serial.println(String("[EPD] boot picture drawn in ") + (millis() - t0) + " ms");
 }
@@ -266,9 +266,6 @@ void epdTask(void*) {
         xTaskNotifyWait(0, 0xFFFFFFFF, &more, 0);
         bits |= more;
 
-        // full refreshes (card, test picture, or every change while partial refresh is off) run with the matrices dark
-        const bool fullRefresh = (bits & (BIT_CARD | BIT_TEST)) || !s_partialOk;
-        epddrv::MatrixPause pause(fullRefresh);
         if (bits & BIT_LAB) {
             runLab();
             continue;
@@ -375,6 +372,41 @@ void probePins() {
     for (int i = 0; i < n; i++) Serial.println(String("       t=") + (times[i] / 1000.0f) + " ms -> " + levels[i]);
     spibus::unlock();
     Serial.println("[EPD] the panel needs a re-init now: run 'epd' or reset the board");
+}
+
+}  // namespace epd
+
+namespace epd {
+
+// Experiment for a panel stuck with a failing booster: deep sleep for `seconds`, optionally with the WiFi off
+// and the matrices dark, then one raw full refresh. The GxEPD2 log shows whether PowerOn is healthy again
+// (~140 ms) or still times out (~2040 ms).
+void recoveryTest(int seconds, bool wifiOff) {
+    epddrv::MatrixPause pause;
+    if (wifiOff) {
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        Serial.println("[EPD] WiFi off for the test");
+    }
+    spibus::lock();
+    s_display.hibernate();
+    spibus::unlock();
+    Serial.printf("[EPD] panel in deep sleep for %d s ...\n", seconds);
+    vTaskDelay(pdMS_TO_TICKS(seconds * 1000));
+    spibus::lock();
+    s_display.setFullWindow();
+    s_display.fillScreen(GxEPD_WHITE);
+    s_display.setTextColor(GxEPD_BLACK);
+    printCentered(W / 2, 240, &FreeSansBold24pt7b, "RECOVERY TEST");
+    printCentered(W / 2, 290, &FreeSansBold12pt7b, String(seconds) + " s deep sleep" + (wifiOff ? ", WiFi off" : ""));
+    s_display.display(false);
+    spibus::unlock();
+    Serial.println("[EPD] recovery test done");
+    if (wifiOff) {
+        Serial.println("[EPD] restarting to bring the WiFi back");
+        delay(200);
+        ESP.restart();
+    }
 }
 
 }  // namespace epd
