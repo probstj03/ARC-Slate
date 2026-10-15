@@ -41,9 +41,9 @@ void IRAM_ATTR isrEncoder() {
 
 // ── menu model ────────────────────────────────────────────────────────────
 enum Item { IT_TAKE, IT_SHOT, IT_SCENE, IT_ROLL, IT_CAM, IT_MODE, IT_RATE, IT_BRIGHT, IT_FLASH, IT_APP, IT_INFO, IT_DONE, IT_COUNT };
-const char* const kItemNames[IT_COUNT] = {"Take", "Shot", "Szene", "Roll", "Kamera", "Modus",
-                                          "Bildrate", "Helligkeit", "Blitz testen", "Uhr-Modus", "Info", "Fertig"};
-const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "HELL", "", "", "", ""};
+const char* const kItemNames[IT_COUNT] = {"Take", "Shot", "Scene", "Roll", "Camera", "Mode",
+                                          "Frame rate", "Brightness", "Test flash", "Clock mode", "Info", "Done"};
+const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "BRT", "", "", "", ""};
 
 using arc::engine::Mode;
 using arc::TcRate;
@@ -207,8 +207,8 @@ void onShortPress() {
             case IT_FLASH: clap::testFlash(); return;
             case IT_APP:
                 // Boots the other firmware (ARC-Clock); no return on success.
-                mtx::showOverlay("UHR", 0);
-                if (!bootsel::switchToOther()) mtx::showOverlay("UHR FEHLT", 2500);
+                mtx::showOverlay("CLOCK", 0);
+                if (!bootsel::switchToOther()) mtx::showOverlay("CLOCK N/A", 2500);
                 return;
             case IT_INFO: epd::requestStatus(); return;
             case IT_MODE: s_pendingIndex = indexOfMode(arc::engine::mode()); break;
@@ -234,7 +234,7 @@ void onLongPress() {
     if (s_ui == UI_IDLE) {
         if (arc::engine::jam().muteHeld) {
             arc::engine::confirmUnplug();
-            mtx::showOverlay("TC AUS J2", 1500);
+            mtx::showOverlay("TC ON J2", 1500);
             arc::net::broadcastStatus();
         } else if (arc::engine::mode() == Mode::RecordRun) {
             const bool run = !arc::engine::running();

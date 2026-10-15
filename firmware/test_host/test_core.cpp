@@ -72,8 +72,8 @@ static void testCivil() {
     CHECK(!parseIcalDateTime("20261313", p, hasTime, utc));
     CHECK(parseIsoDateTime("2026-10-13T07:12", p, hasTime) && hasTime && p.hour == 7 && p.minute == 12);
     CHECK(parseIsoDateTime("2026-10-13", p, hasTime) && !hasTime);
-    CHECK_STR(weekdayName(1, false), "Montag");
-    CHECK_STR(monthName(3, false), "Maerz");
+    CHECK_STR(weekdayName(1, false), "Monday");
+    CHECK_STR(monthName(3, false), "March");
 }
 
 static void testFold() {
@@ -105,7 +105,7 @@ static void testMoon() {
     // next full moon after a new moon is about 14.8 days later
     const int64_t nf = nextMoonEvent(nm + 3600, true);
     CHECK(nf - nm > 14 * 86400 && nf - nm < 16 * 86400);
-    CHECK_STR(moonPhaseName(4), "Vollmond");
+    CHECK_STR(moonPhaseName(4), "Full moon");
 }
 
 // ── iCalendar / CalDAV ───────────────────────────────────────────────────
@@ -313,11 +313,11 @@ static void testAgenda() {
     CHECK(a.countOnDay(today) == 3);
 
     char buf[24];
-    dayLabel(today, today, buf, sizeof(buf)); CHECK_STR(buf, "Heute");
-    dayLabel(today + 86400, today, buf, sizeof(buf)); CHECK_STR(buf, "Morgen");
-    dayLabel(today + 3 * 86400, today, buf, sizeof(buf)); CHECK_STR(buf, "Do 15.10.");
+    dayLabel(today, today, buf, sizeof(buf)); CHECK_STR(buf, "Today");
+    dayLabel(today + 86400, today, buf, sizeof(buf)); CHECK_STR(buf, "Tomorrow");
+    dayLabel(today + 3 * 86400, today, buf, sizeof(buf)); CHECK_STR(buf, "Thu 15.10.");
     timeLabel(a.ev[1], buf, sizeof(buf)); CHECK_STR(buf, "09:00-10:00");
-    timeLabel(a.ev[0], buf, sizeof(buf)); CHECK_STR(buf, "ganztags");
+    timeLabel(a.ev[0], buf, sizeof(buf)); CHECK_STR(buf, "all day");
     const uint32_t h1 = a.hash();
     a.ev[1].summary[0] = 'X';
     CHECK(a.hash() != h1);

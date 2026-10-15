@@ -66,16 +66,16 @@ int isoWeek(int y, int m, int d) {
 }
 
 const char* weekdayName(int wd, bool shortName) {
-    static const char* const full[] = {"Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"};
-    static const char* const abbr[] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
+    static const char* const full[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    static const char* const abbr[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
     if (wd < 1 || wd > 7) return "?";
     return shortName ? abbr[wd - 1] : full[wd - 1];
 }
 
 const char* monthName(int m, bool shortName) {
-    static const char* const full[] = {"Januar", "Februar", "Maerz", "April", "Mai", "Juni", "Juli",
-                                       "August", "September", "Oktober", "November", "Dezember"};
-    static const char* const abbr[] = {"Jan", "Feb", "Mar", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"};
+    static const char* const full[] = {"January", "February", "March", "April", "May", "June", "July",
+                                       "August", "September", "October", "November", "December"};
+    static const char* const abbr[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     if (m < 1 || m > 12) return "?";
     return shortName ? abbr[m - 1] : full[m - 1];
 }

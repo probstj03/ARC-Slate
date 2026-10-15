@@ -35,8 +35,8 @@ int64_t nextMoonEvent(int64_t utcSec, bool full) {
 }
 
 const char* moonPhaseName(int phase) {
-    static const char* const names[] = {"Neumond", "Zunehmende Sichel", "Erstes Viertel", "Zunehmender Mond",
-                                        "Vollmond", "Abnehmender Mond", "Letztes Viertel", "Abnehmende Sichel"};
+    static const char* const names[] = {"New moon", "Waxing crescent", "First quarter", "Waxing gibbous",
+                                        "Full moon", "Waning gibbous", "Last quarter", "Waning crescent"};
     return (phase >= 0 && phase < 8) ? names[phase] : "?";
 }
 

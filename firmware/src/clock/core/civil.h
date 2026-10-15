@@ -24,7 +24,7 @@ int64_t daysOf(int64_t sec);         // whole days since the epoch
 int weekday(int64_t days);           // 1 = Monday ... 7 = Sunday
 int isoWeek(int y, int m, int d);
 
-// German, ASCII only (the GFX fonts have no umlauts). wd: 1..7 Monday..Sunday, m: 1..12
+// English names. wd/m as below. wd: 1..7 Monday..Sunday, m: 1..12
 const char* weekdayName(int wd, bool shortName);
 const char* monthName(int m, bool shortName);
 

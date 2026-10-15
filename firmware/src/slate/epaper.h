@@ -25,6 +25,11 @@ void startTask();
 void requestCard();    // full redraw of the slate card
 void requestStatus();  // partial redraw of the status bar
 void showMenu(const MenuView& view);
+void setPartial(bool on);   // partial refresh for menu / status bar (default off)
+bool partialEnabled();
+void probePins();         // serial: epdpins (BUSY / RST check)
+void requestLab();           // serial: epdlab (same picture, different SPI clocks / matrices on/off)
+void requestTest();    // hardware test picture (serial: epdtest)
 void closeMenu();      // back to the slate card
 
 void setStatusProvider(String (*provider)());

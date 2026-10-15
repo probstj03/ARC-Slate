@@ -19,6 +19,6 @@ MoonInfo moonAt(int64_t utcSec);
 // Time of the next new moon (target 0) or full moon (target 0.5), seconds since 1970 as given.
 int64_t nextMoonEvent(int64_t utcSec, bool full);
 
-const char* moonPhaseName(int phase);   // German, ASCII
+const char* moonPhaseName(int phase);   // English
 
 }  // namespace ac

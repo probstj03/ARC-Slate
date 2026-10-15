@@ -115,8 +115,8 @@ void checkReminder(int64_t sec) {
     const ac::Civil t = ac::fromSec(e.start);
     char text[64];
     if (stage == 1) snprintf(text, sizeof(text), "%02d:%02d %s IN %d MIN", t.hour, t.minute, e.summary, (int)((delta + 59) / 60));
-    else if (stage == 2) snprintf(text, sizeof(text), "GLEICH %s", e.summary);
-    else snprintf(text, sizeof(text), "JETZT %s", e.summary);
+    else if (stage == 2) snprintf(text, sizeof(text), "SOON %s", e.summary);
+    else snprintf(text, sizeof(text), "NOW %s", e.summary);
     clockmatrix::scroll(text);
     s_blinkUntil = millis() + 10000;
 }
@@ -244,7 +244,7 @@ void drawRight(int64_t sec, uint32_t nowMs, uint32_t elapsed, bool blink) {
             break;
         }
         case RP_DATE:
-            snprintf(buf, sizeof(buf), "%s%d", ac::weekdayName(ac::weekday(ac::daysOf(sec)), true), c.day);
+            snprintf(buf, sizeof(buf), "%.2s%d", ac::weekdayName(ac::weekday(ac::daysOf(sec)), true), c.day);
             mtx::field(mtx::CHAIN_DATA, F_RIGHT, 3, false, buf);
             break;
         case RP_MONTH:
@@ -387,7 +387,7 @@ void adjustBrightness(int delta) {
     const int v = constrain((int)b + delta, 0, 15);
     b = (uint8_t)v;
     mtx::setBrightness(b);
-    mtx::showOverlay(String("HELL ") + v, 900);
+    mtx::showOverlay(String("BRT ") + v, 900);
     s_brightnessSaveDue = true;
     s_brightnessSaveAt = millis() + 2000;
 }

@@ -25,7 +25,7 @@ struct ShotInfo {
 };
 
 struct Settings {
-    uint8_t brightness      = 8;     // MAX7219 intensity 0..15
+    uint8_t brightness      = 1;     // MAX7219 intensity 0..15 (low on purpose: 16 modules pulse the supply)
     bool    sqwEdgeKnown    = false; // DS3231 second edge auto-detected?
     bool    sqwFalling      = true;  // true: falling SQW edge marks the second change
     int32_t flashLatencyUs  = 0;     // delay hall edge -> LED fully on (calibrate)

@@ -203,3 +203,31 @@ Einmal vorher `pio run -e clock`, damit die Bibliotheken in `.pio/libdeps` liege
   - ein kompletter Tageszyklus des E-Inks
 - Nicht enthalten: Schlafmodus für Akkubetrieb (die Uhr nimmt dauerhafte Versorgung an), Abhaken von Aufgaben auf dem Gerät,
   ARC-Studio-Karte für die Uhr (ARC-Studio ignoriert den Gerätetyp `clock`).
+
+## Stromversorgung und E-Ink – Erfahrungen aus der Inbetriebnahme
+
+Der DevKit-Regler (3,3 V) und der USB-Port tragen ESP, WLAN, RTC, DAC, E-Ink und die Matrizen **ohne Reserve**.
+Ein schwacher USB-Port, ein dünnes Kabel oder 16 hell leuchtende MAX7219-Module reichen, damit die 3,3 V einbrechen.
+Das E-Ink-Panel merkt das als Erstes: **verzerrte oder invertierte Bilder, Kontrastverlust, `Busy Timeout!`,
+Update-Zeiten, die schwanken (2–6 s statt konstant ~5,4 s).** Der ESP selbst läuft dabei oft weiter.
+
+Was geholfen hat / gilt:
+- **Kräftige Quelle:** ein Netzteil (5 V, ≥ 2 A) mit kurzem, dickem Kabel an die zweite USB-Buchse des DevKits, der PC an der anderen.
+- **Matrizen nicht an 3V3 legen.** Besser: eigene 5-V-Versorgung (Akku-Wandler ≥ 3 A) oder ein eigener 3,3-V-Wandler nur für die Matrizen,
+  gemeinsame Masse, Elko 470–1000 µF an der Einspeisung (+ 100 nF).
+- **Helligkeit niedrig starten** (Standard 1). Die MAX7219 ziehen Stromspitzen im Multiplex-Takt (hohes Surren = Ripple auf der Versorgung).
+- Vor jedem vollen E-Ink-Refresh schaltet die Firmware die Matrizen kurz ab (`epddrv::MatrixPause`, ca. 120 ms vorher, danach wieder an).
+- Flachband (FPC) bis zum Anschlag einsetzen, Bügel schließen. Ein halb sitzendes Band verhält sich wie ein Softwarefehler.
+
+Serielle Hilfsbefehle (Monitor, 115200 Baud):
+
+| Befehl | Zweck |
+|---|---|
+| `epdtest` | Testbild mit Rahmen, Diagonalen, Lineal, Streifen, Schachbrett |
+| `epdpins` | BUSY/RST prüfen: Ein lebendes Panel zieht BUSY beim Reset kurz auf 0 |
+| `epdlab` | dasselbe Bild mit 4 SPI-Takten × Matrizen an/aus, die Einstellung steht im Bild |
+| `epdspi HZ` | E-Ink-SPI-Takt setzen (Standard 2 MHz, 4 MHz war unzuverlässig) |
+| `epdpartial 0\|1` | Teil-Refresh für Menü/Statuszeile (Standard aus: jede Änderung ist ein voller Refresh) |
+| `epd` | Karte neu zeichnen |
+
+`py tools/gen_logo.py` erzeugt Logo und Startbild neu aus `ARC-Server/server/css/logo.png`.

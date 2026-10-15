@@ -27,7 +27,7 @@ constexpr int RIGHT_X = 344, RIGHT_W = W - RIGHT_X;
 constexpr int STATUS_Y = 448, STATUS_H = H - STATUS_Y;
 constexpr int PANEL_H = STATUS_Y - 4;       // right panel height (QR / menu)
 
-constexpr uint32_t BIT_CARD = 1, BIT_STATUS = 2, BIT_MENU = 4, BIT_CLOSE_MENU = 8;
+constexpr uint32_t BIT_CARD = 1, BIT_STATUS = 2, BIT_MENU = 4, BIT_CLOSE_MENU = 8, BIT_TEST = 16, BIT_LAB = 32;
 constexpr int PARTIALS_BEFORE_FULL = 25;    // full refresh against ghosting
 
 TaskHandle_t s_task = nullptr;
@@ -110,9 +110,9 @@ void drawRightPanelCard(const ShotInfo& s, const String& roll) {
             return;
         }
     }
-    s_display.drawInvertedBitmap(RIGHT_X + (RIGHT_W - 400) / 2, 60, logo, 400, 130, GxEPD_BLACK);
-    printCentered(RIGHT_X + RIGHT_W / 2, 290, &FreeSansBold18pt7b, "KEIN TAKE GEWAEHLT");
-    printCentered(RIGHT_X + RIGHT_W / 2, 330, &FreeSans9pt7b, "Projekt in ARC-Studio laden oder Take am Encoder waehlen");
+    s_display.drawInvertedBitmap(RIGHT_X + (RIGHT_W - 170) / 2, 70, logo, 170, 170, GxEPD_BLACK);
+    printCentered(RIGHT_X + RIGHT_W / 2, 300, &FreeSansBold18pt7b, "NO TAKE SELECTED");
+    printCentered(RIGHT_X + RIGHT_W / 2, 336, &FreeSans9pt7b, "Load a project in ARC-Studio or pick a take with the encoder");
 }
 
 void drawMenuPanel(const MenuView& m) {
@@ -144,6 +144,71 @@ void drawMenuPanel(const MenuView& m) {
     if (m.hint.length()) printAt(RIGHT_X + 14, PANEL_H - 12, &FreeSans9pt7b, m.hint);
 }
 
+// Test picture for hardware debugging: border, diagonals, ruler, stripes, checkerboard, text.
+// What goes wrong shows what is wrong: noise = SPI signal (clock too fast, loading by the matrices),
+// shifted or wrapped picture = wrong panel type / window, nothing = wiring / reset.
+void renderTestPattern() {
+    s_display.setFullWindow();
+    s_display.fillScreen(GxEPD_WHITE);
+    s_display.setTextColor(GxEPD_BLACK);
+    s_display.drawRect(0, 0, W, H, GxEPD_BLACK);
+    s_display.drawRect(3, 3, W - 6, H - 6, GxEPD_BLACK);
+    s_display.drawLine(0, 0, W - 1, H - 1, GxEPD_BLACK);
+    s_display.drawLine(0, H - 1, W - 1, 0, GxEPD_BLACK);
+    for (int x = 100; x < W; x += 100) {                       // ruler along the top and bottom
+        s_display.drawFastVLine(x, 0, 24, GxEPD_BLACK);
+        s_display.drawFastVLine(x, H - 24, 24, GxEPD_BLACK);
+        printAt(x + 4, 40, &FreeSans9pt7b, String(x));
+    }
+    for (int y = 100; y < H; y += 100) {
+        s_display.drawFastHLine(0, y, 24, GxEPD_BLACK);
+        s_display.drawFastHLine(W - 24, y, 24, GxEPD_BLACK);
+        printAt(30, y + 5, &FreeSans9pt7b, String(y));
+    }
+    for (int i = 0; i < 16; i++)                                 // stripes of growing width
+        s_display.fillRect(60 + i * 10 + i * (i - 1) / 2, 80, i + 1, 60, GxEPD_BLACK);
+    for (int y = 0; y < 8; y++)                                  // checkerboard
+        for (int x = 0; x < 8; x++)
+            if ((x + y) & 1) s_display.fillRect(560 + x * 12, 300 + y * 12, 12, 12, GxEPD_BLACK);
+    s_display.fillRect(600, 80, 120, 60, GxEPD_BLACK);           // solid block
+    printCentered(W / 2, 200, &FreeSansBold24pt7b, "ARC-SLATE E-INK TEST");
+    printCentered(W / 2, 240, &FreeSansBold12pt7b, String("800x480  SPI ") + String(epddrv::spiHz() / 1000) + " kHz");
+    printCentered(W / 2, 280, &FreeSans9pt7b, "lines, ruler, stripes and checkerboard must be sharp and undistorted");
+    s_display.display(false);
+    s_partials = 0;
+}
+
+// Lab: the same picture with different SPI clocks, matrices on / off. The setting is printed into the picture,
+// so "which numbers are sharp?" tells what the distortion depends on.
+void runLab() {
+    const uint32_t speeds[] = {4000000, 2000000, 1000000, 500000};
+    const uint32_t saved = epddrv::spiHz();
+    int n = 0;
+    for (uint32_t hz : speeds) {
+        for (int matricesOn = 1; matricesOn >= 0; matricesOn--) {
+            n++;
+            epddrv::setSpiHz(hz);
+            epddrv::MatrixPause pause(!matricesOn);
+            spibus::lock();
+            s_display.setFullWindow();
+            s_display.fillScreen(GxEPD_WHITE);
+            s_display.drawInvertedBitmap(0, 0, bootscreen_V2, W, H, GxEPD_BLACK);
+            s_display.fillRect(0, 420, W, 60, GxEPD_WHITE);
+            s_display.drawRect(0, 420, W, 60, GxEPD_BLACK);
+            printCentered(W / 2, 462, &FreeSansBold18pt7b,
+                          String("LAB ") + n + "/8   SPI " + (hz / 1000) + " kHz   matrices " + (matricesOn ? "ON" : "OFF"));
+            const uint32_t t0 = millis();
+            s_display.display(false);
+            spibus::unlock();
+            Serial.println(String("[LAB] ") + n + "/8 SPI " + (hz / 1000) + " kHz, matrices " + (matricesOn ? "on" : "off") +
+                           ": " + (millis() - t0) + " ms");
+        }
+    }
+    epddrv::setSpiHz(saved);
+    s_partials = 0;
+    Serial.println("[LAB] done");
+}
+
 void renderCard() {
     state::lock();
     const ShotInfo s = state::shot();
@@ -155,12 +220,18 @@ void renderCard() {
     drawLeftColumn(s);
     drawRightPanelCard(s, roll);
     drawStatus();
+    const uint32_t t0 = millis();
     s_display.display(false);
     s_partials = 0;
+    Serial.println(String("[EPD] card drawn in ") + (millis() - t0) + " ms");
 }
 
+// Partial refresh is switched off until it is proven to look right on this panel (serial: epdpartial 1):
+// without it every change is a full refresh (about 4 s) but the picture cannot get garbled.
+bool s_partialOk = false;
+
 void partial(int x, int y, int w, int h) {
-    if (++s_partials > PARTIALS_BEFORE_FULL) {
+    if (!s_partialOk || ++s_partials > PARTIALS_BEFORE_FULL) {
         s_display.display(false);
         s_partials = 0;
     } else {
@@ -168,7 +239,25 @@ void partial(int x, int y, int w, int h) {
     }
 }
 
+void drawBootPicture() {
+    epddrv::MatrixPause pause;
+    spibus::lock();
+    s_display.setFullWindow();
+    s_display.fillScreen(GxEPD_WHITE);
+    s_display.drawInvertedBitmap(0, 0, bootscreen_V2, W, H, GxEPD_BLACK);
+    const uint32_t t0 = millis();
+    s_display.display(false);
+    spibus::unlock();
+    Serial.println(String("[EPD] boot picture drawn in ") + (millis() - t0) + " ms");
+}
+
 void epdTask(void*) {
+    // Connecting to the WiFi draws current peaks that dip the 3V3 rail. Refreshes done meanwhile came out
+    // garbled, so the first picture waits until the network is up (or 30 s have passed).
+    const uint32_t start = millis();
+    while (arc::net::role() == arc::net::Role::Offline && millis() - start < 30000) vTaskDelay(pdMS_TO_TICKS(250));
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    drawBootPicture();
     for (;;) {
         uint32_t bits = 0;
         xTaskNotifyWait(0, 0xFFFFFFFF, &bits, portMAX_DELAY);
@@ -177,6 +266,19 @@ void epdTask(void*) {
         xTaskNotifyWait(0, 0xFFFFFFFF, &more, 0);
         bits |= more;
 
+        // full refreshes (card, test picture, or every change while partial refresh is off) run with the matrices dark
+        const bool fullRefresh = (bits & (BIT_CARD | BIT_TEST)) || !s_partialOk;
+        epddrv::MatrixPause pause(fullRefresh);
+        if (bits & BIT_LAB) {
+            runLab();
+            continue;
+        }
+        if (bits & BIT_TEST) {
+            spibus::lock();
+            renderTestPattern();
+            spibus::unlock();
+            continue;
+        }
         spibus::lock();
         if (bits & BIT_CLOSE_MENU) {
             s_menuOpen = false;
@@ -212,13 +314,7 @@ namespace epd {
 
 void begin() {
     s_viewMtx = xSemaphoreCreateMutex();
-    epddrv::init();
-    spibus::lock();
-    s_display.setFullWindow();
-    s_display.fillScreen(GxEPD_WHITE);
-    s_display.drawInvertedBitmap(0, 0, bootscreen_V2, W, H, GxEPD_BLACK);
-    s_display.display(false);
-    spibus::unlock();
+    epddrv::init();           // the first picture is drawn by the task once the WiFi has settled
 }
 
 void startTask() {
@@ -237,6 +333,48 @@ void showMenu(const MenuView& view) {
 
 void closeMenu() { if (s_task) xTaskNotify(s_task, BIT_CLOSE_MENU, eSetBits); }
 
+void setPartial(bool on) {
+    s_partialOk = on;
+    Serial.println(on ? "E-Ink partial refresh: on" : "E-Ink partial refresh: off (full refresh only)");
+}
+bool partialEnabled() { return s_partialOk; }
+
+void requestLab() { if (s_task) xTaskNotify(s_task, BIT_LAB, eSetBits); }
+
+void requestTest() { if (s_task) xTaskNotify(s_task, BIT_TEST, eSetBits); }
+
 void setStatusProvider(String (*provider)()) { s_statusProvider = provider; }
+
+}  // namespace epd
+
+namespace epd {
+
+// Electrical check of the panel: BUSY level at rest, then a reset pulse and every BUSY transition for 1.5 s.
+// A living UC8179 panel pulls BUSY low for a moment around the reset and releases it afterwards.
+void probePins() {
+    epddrv::MatrixPause pause;
+    spibus::lock();
+    pinMode(PIN_EPD_BUSY, INPUT);
+    Serial.println(String("[EPD] BUSY at rest      : ") + digitalRead(PIN_EPD_BUSY) + "  (idle level is 1 for this panel)");
+    pinMode(PIN_EPD_RST, OUTPUT);
+    digitalWrite(PIN_EPD_RST, LOW);
+    delay(20);
+    Serial.println(String("[EPD] BUSY with RST low : ") + digitalRead(PIN_EPD_BUSY));
+    digitalWrite(PIN_EPD_RST, HIGH);
+    uint32_t times[16];
+    uint8_t levels[16];
+    int n = 0;
+    int last = digitalRead(PIN_EPD_BUSY);
+    const uint32_t t0 = micros();
+    while (micros() - t0 < 1500000 && n < 16) {
+        const int v = digitalRead(PIN_EPD_BUSY);
+        if (v != last) { times[n] = micros() - t0; levels[n++] = (uint8_t)v; last = v; }
+    }
+    Serial.println(String("[EPD] BUSY after RST high: ") + (n ? "starts" : "stays at") + " " + (n ? (int)!levels[0] : last) +
+                   ", " + n + " transition(s) in 1.5 s");
+    for (int i = 0; i < n; i++) Serial.println(String("       t=") + (times[i] / 1000.0f) + " ms -> " + levels[i]);
+    spibus::unlock();
+    Serial.println("[EPD] the panel needs a re-init now: run 'epd' or reset the board");
+}
 
 }  // namespace epd

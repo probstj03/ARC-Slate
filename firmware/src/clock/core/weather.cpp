@@ -21,15 +21,15 @@ WxKind kindFromWmo(int c) {
 
 const char* kindName(WxKind k) {
     switch (k) {
-        case WxKind::Clear: return "Klar";
-        case WxKind::PartlyCloudy: return "Heiter";
-        case WxKind::Cloudy: return "Bewoelkt";
-        case WxKind::Fog: return "Nebel";
-        case WxKind::Drizzle: return "Nieselregen";
-        case WxKind::Rain: return "Regen";
-        case WxKind::Showers: return "Schauer";
-        case WxKind::Snow: return "Schnee";
-        case WxKind::Thunder: return "Gewitter";
+        case WxKind::Clear: return "Clear";
+        case WxKind::PartlyCloudy: return "Partly cloudy";
+        case WxKind::Cloudy: return "Cloudy";
+        case WxKind::Fog: return "Fog";
+        case WxKind::Drizzle: return "Drizzle";
+        case WxKind::Rain: return "Rain";
+        case WxKind::Showers: return "Showers";
+        case WxKind::Snow: return "Snow";
+        case WxKind::Thunder: return "Thunderstorm";
         default: return "?";
     }
 }

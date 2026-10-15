@@ -8,10 +8,27 @@
 
 namespace epddrv {
 
+// Switches the LED matrices off while it lives (and back on afterwards if they were on). A full e-ink
+// refresh draws a current peak from the shared 5V/3V3 supply; with the matrices lit at the same time the
+// supply dips and the panel receives garbled data. Create it BEFORE taking the SPI lock: the matrix task
+// needs the bus to send the shutdown command.
+class MatrixPause {
+public:
+    explicit MatrixPause(bool active = true);   // active = false does nothing
+    ~MatrixPause();
+
+private:
+    bool _was;
+};
+
 constexpr int W = 800, H = 480;
 
 using Display = GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT>;
 Display& display();
+
+// SPI clock of the panel (default 2 MHz: the matrices share MOSI/SCK and load the lines).
+void setSpiHz(uint32_t hz);
+uint32_t spiHz();
 
 // Initialises the panel (takes the SPI lock itself). Does not draw anything.
 void init();

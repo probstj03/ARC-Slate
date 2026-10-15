@@ -8,7 +8,7 @@ namespace ac {
 enum class WxKind : uint8_t { Clear, PartlyCloudy, Cloudy, Fog, Drizzle, Rain, Showers, Snow, Thunder, Unknown };
 
 WxKind kindFromWmo(int code);          // WMO weather interpretation code -> icon kind
-const char* kindName(WxKind kind);     // German, ASCII
+const char* kindName(WxKind kind);     // English
 
 constexpr int kHours = 48;             // today and tomorrow, indexed from midnight of day 0
 

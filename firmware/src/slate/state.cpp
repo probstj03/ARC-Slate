@@ -26,7 +26,7 @@ void load() {
     s_shot.fps         = s_prefs.getFloat("fps", 25.0f);
     s_shot.mos         = s_prefs.getBool("mos", false);
     s_shot.loaded      = s_prefs.getBool("loaded", false);
-    s_settings.brightness      = s_prefs.getUChar("bright", 8);
+    s_settings.brightness      = s_prefs.getUChar("bright1", 1);
     s_settings.sqwEdgeKnown    = s_prefs.getBool("sqwKnown", false);
     s_settings.sqwFalling      = s_prefs.getBool("sqwFall", true);
     s_settings.flashLatencyUs  = s_prefs.getInt("flashLat", 0);
@@ -50,7 +50,7 @@ void save() {
     s_prefs.putFloat("fps", s_shot.fps);
     s_prefs.putBool("mos", s_shot.mos);
     s_prefs.putBool("loaded", s_shot.loaded);
-    s_prefs.putUChar("bright", s_settings.brightness);
+    s_prefs.putUChar("bright1", s_settings.brightness);
     s_prefs.putBool("sqwKnown", s_settings.sqwEdgeKnown);
     s_prefs.putBool("sqwFall", s_settings.sqwFalling);
     s_prefs.putInt("flashLat", s_settings.flashLatencyUs);

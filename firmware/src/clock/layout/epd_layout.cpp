@@ -185,13 +185,13 @@ void drawHeader(int64_t now) {
     const ac::Civil c = ac::fromSec(now);
     const int wd = ac::weekday(ac::daysOf(now));
     char date[48];
-    snprintf(date, sizeof(date), "%s, %d. %s %d", ac::weekdayName(wd, false), c.day, ac::monthName(c.month, false), c.year);
+    snprintf(date, sizeof(date), "%s, %d %s %d", ac::weekdayName(wd, false), c.day, ac::monthName(c.month, false), c.year);
     const GFXfont* fonts[] = {&FreeSansBold24pt7b, &FreeSansBold18pt7b, &FreeSansBold12pt7b};
     const GFXfont* f = fonts[2];
     for (const GFXfont* cand : fonts) if (textWidth(cand, date) <= 510) { f = cand; break; }
     printAt(10, f == &FreeSansBold24pt7b ? 50 : f == &FreeSansBold18pt7b ? 46 : 40, f, date);
     char week[16];
-    snprintf(week, sizeof(week), "KW %d", ac::isoWeek(c.year, c.month, c.day));
+    snprintf(week, sizeof(week), "Wk %d", ac::isoWeek(c.year, c.month, c.day));
     printAt(12, 69, &FreeSans9pt7b, week);
 
     // moon block on the right: disc, phase name, illumination and the next full / new moon
@@ -205,7 +205,7 @@ void drawHeader(int64_t now) {
     const bool fullFirst = nextFull < nextNew;
     const int days = (int)((((fullFirst ? nextFull : nextNew) - ac::localToUtc(now)) + 43200) / 86400);
     char moon[48];
-    snprintf(moon, sizeof(moon), "%d %%  %s in %d T", (int)lroundf(m.illum * 100.0), fullFirst ? "Vollmond" : "Neumond", days);
+    snprintf(moon, sizeof(moon), "%d %%  %s in %d d", (int)lroundf(m.illum * 100.0), fullFirst ? "Full moon" : "New moon", days);
     printAt(tx, 56, &FreeSans9pt7b, fit(&FreeSans9pt7b, moon, tw));
     G->fillRect(0, HEADER_H - 2, W, 3, kBlack);
 }
@@ -215,7 +215,7 @@ void drawHeader(int64_t now) {
 void drawWeatherBand(int64_t now) {
     const ac::Weather& w = S->weather;
     if (!w.valid) {
-        printAt(14, WX_Y + 56, &FreeSans12pt7b, "Kein Wetter - Abruf fehlgeschlagen oder noch nicht erfolgt");
+        printAt(14, WX_Y + 56, &FreeSans12pt7b, "No weather data - fetch failed or not done yet");
         G->fillRect(0, WX_Y + WX_H, W, 2, kBlack);
         return;
     }
@@ -227,7 +227,7 @@ void drawWeatherBand(int64_t now) {
     printTemp(86, WX_Y + 50, &FreeSansBold24pt7b, w.temp10);
     printAt(86, WX_Y + 70, &FreeSans9pt7b, ac::kindName(ac::kindFromWmo(w.wmo)));
     char line[64];
-    snprintf(line, sizeof(line), "%d / %d   Regen %u %%", (int)lroundf(day.tMin10 / 10.0f), (int)lroundf(day.tMax10 / 10.0f), day.popMax);
+    snprintf(line, sizeof(line), "%d / %d   Rain %u %%", (int)lroundf(day.tMin10 / 10.0f), (int)lroundf(day.tMax10 / 10.0f), day.popMax);
     printAt(86, WX_Y + 87, &FreeSans9pt7b, fit(&FreeSans9pt7b, line, 170));
 
     // sunrise / sunset
@@ -242,7 +242,7 @@ void drawWeatherBand(int64_t now) {
     printAt(sx + 34, WX_Y + 63, &FreeSansBold18pt7b, day.sunset ? t : "--:--");
     if (day.sunrise && day.sunset > day.sunrise) {
         const int len = (int)((day.sunset - day.sunrise) / 60);
-        snprintf(line, sizeof(line), "Tag %d h %02d min", len / 60, len % 60);
+        snprintf(line, sizeof(line), "Daylight %d h %02d min", len / 60, len % 60);
         printAt(sx, WX_Y + 87, &FreeSans9pt7b, line);
     }
 
@@ -309,11 +309,11 @@ void drawCalendar(int64_t now) {
     const int64_t today = ac::dayStart(now);
     G->fillRect(0, BODY_Y - 2, SEP_X - 8, 24, kBlack);
     G->setTextColor(kWhite);
-    printAt(10, BODY_Y + 16, &FreeSansBold12pt7b, "TERMINE");
+    printAt(10, BODY_Y + 16, &FreeSansBold12pt7b, "EVENTS");
     G->setTextColor(kBlack);
     if (!S->src[clockdata::SRC_CALENDAR].ok) {
-        printAt(10, BODY_Y + 54, &FreeSans12pt7b, "Kalender nicht verfuegbar");
-        printAt(10, BODY_Y + 78, &FreeSans9pt7b, fit(&FreeSans9pt7b, S->src[clockdata::SRC_CALENDAR].error[0] ? S->src[clockdata::SRC_CALENDAR].error : "noch nicht abgerufen", SEP_X - 30));
+        printAt(10, BODY_Y + 54, &FreeSans12pt7b, "Calendar unavailable");
+        printAt(10, BODY_Y + 78, &FreeSans9pt7b, fit(&FreeSans9pt7b, S->src[clockdata::SRC_CALENDAR].error[0] ? S->src[clockdata::SRC_CALENDAR].error : "not fetched yet", SEP_X - 30));
         return;
     }
     int y = BODY_Y + 26;
@@ -345,14 +345,14 @@ void drawCalendar(int64_t now) {
         printAt(10, y + 18, day == 0 ? &FreeSansBold12pt7b : &FreeSansBold9pt7b, full);
         y += 24;
         if (n == 0) {
-            printAt(24, y + 14, &FreeSans9pt7b, "keine Termine");
+            printAt(24, y + 14, &FreeSans9pt7b, "no events");
             y += 24;
             continue;
         }
         for (int k = 0; k < n; k++) {
             const ac::Event& e = a.ev[idx[k]];
             char tl[24];
-            if (e.allDay) snprintf(tl, sizeof(tl), "ganztags");
+            if (e.allDay) snprintf(tl, sizeof(tl), "all day");
             else {
                 const ac::Civil s = ac::fromSec(max(e.start, ds));
                 snprintf(tl, sizeof(tl), "%02d:%02d", s.hour, s.minute);
@@ -367,7 +367,7 @@ void drawCalendar(int64_t now) {
     }
     (void)anyToday;
     if (hidden > 0) {
-        printRight(SEP_X - 14, BODY_BOTTOM + 2, &FreeSans9pt7b, String("+ weitere Tage"));
+        printRight(SEP_X - 14, BODY_BOTTOM + 2, &FreeSans9pt7b, String("+ more days"));
     }
     (void)shown;
 }
@@ -384,9 +384,9 @@ void drawTodo(int64_t now) {
     G->setTextColor(kBlack);
     G->drawFastVLine(SEP_X - 4, BODY_Y - 2, BODY_BOTTOM - BODY_Y + 4, kBlack);
     if (!S->src[clockdata::SRC_TODO].ok) {
-        printAt(x0, BODY_Y + 54, &FreeSans9pt7b, "To-Do nicht verfuegbar");
+        printAt(x0, BODY_Y + 54, &FreeSans9pt7b, "To-do unavailable");
         const char* err = S->src[clockdata::SRC_TODO].error;
-        printAt(x0, BODY_Y + 76, &FreeSans9pt7b, fit(&FreeSans9pt7b, err[0] ? err : "noch nicht abgerufen", x1 - x0));
+        printAt(x0, BODY_Y + 76, &FreeSans9pt7b, fit(&FreeSans9pt7b, err[0] ? err : "not fetched yet", x1 - x0));
         return;
     }
     int y = BODY_Y + 28;
@@ -398,8 +398,8 @@ void drawTodo(int64_t now) {
         if (t.hasDate) {
             const ac::Civil c = ac::fromSec(t.date);
             if (t.date < today) snprintf(tag, sizeof(tag), "!%d.%d.", c.day, c.month);
-            else if (t.date == today) snprintf(tag, sizeof(tag), "heute");
-            else if (t.date == today + 86400) snprintf(tag, sizeof(tag), "morgen");
+            else if (t.date == today) snprintf(tag, sizeof(tag), "today");
+            else if (t.date == today + 86400) snprintf(tag, sizeof(tag), "tomorrow");
             else snprintf(tag, sizeof(tag), "%d.%d.", c.day, c.month);
         }
         const bool overdue = t.hasDate && t.date < today;
@@ -417,10 +417,10 @@ void drawTodo(int64_t now) {
     }
     if (shown < S->taskCount) {
         char more[24];
-        snprintf(more, sizeof(more), "+ %d weitere", S->taskCount - shown);
+        snprintf(more, sizeof(more), "+ %d more", S->taskCount - shown);
         printAt(x0 + 24, BODY_BOTTOM + 2, &FreeSans9pt7b, more);
     }
-    if (S->taskCount == 0) printAt(x0 + 24, y + 17, &FreeSans9pt7b, "alles erledigt");
+    if (S->taskCount == 0) printAt(x0 + 24, y + 17, &FreeSans9pt7b, "all done");
 }
 
 // ── footer ───────────────────────────────────────────────────────────────
@@ -439,11 +439,11 @@ void drawFooter(int64_t now) {
     hm(S->src[clockdata::SRC_TODO].at, b, sizeof(b));
     hm(S->src[clockdata::SRC_WEATHER].at, wx, sizeof(wx));
     char line[120];
-    snprintf(line, sizeof(line), "Stand %d.%d. %02d:%02d   Termine %s%s   To-Do %s%s   Wetter %s%s", c.day, c.month, c.hour, c.minute, a,
+    snprintf(line, sizeof(line), "Updated %d.%d. %02d:%02d  |  Events %s%s  To-do %s%s  Weather %s%s", c.day, c.month, c.hour, c.minute, a,
              S->src[clockdata::SRC_CALENDAR].ok ? "" : " !", b, S->src[clockdata::SRC_TODO].ok ? "" : " !", wx,
              S->src[clockdata::SRC_WEATHER].ok ? "" : " !");
     printAt(10, FOOTER_Y + 22, &FreeSans9pt7b, line);
-    printRight(W - 10, FOOTER_Y + 22, &FreeSans9pt7b, String(opt.place) + "  -  " + opt.version);
+    printRight(W - 10, FOOTER_Y + 22, &FreeSans9pt7b, String(opt.place));
 }
 
 }  // namespace

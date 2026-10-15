@@ -213,15 +213,15 @@ String statusLine() {
         case Mode::JamFree:
         case Mode::JamRec: {
             const arc::engine::JamStatus j = arc::engine::jam();
-            line += j.state == arc::engine::JamStatus::State::Verifying ? "Jam pruefen " + String(j.verifyRemainingS) + "s"
+            line += j.state == arc::engine::JamStatus::State::Verifying ? "Jam verify " + String(j.verifyRemainingS) + "s"
                                                                        : "Jam...";
             break;
         }
         default: break;
     }
     line += " " + String(arc::rateKey(arc::engine::rate())) + " fps";
-    if (arc::engine::jam().muteHeld) line += "  |  KABEL ABZIEHEN";
-    if (!arc::clock::sqwActive()) line += "  |  RTC-SQW fehlt";
+    if (arc::engine::jam().muteHeld) line += "  |  UNPLUG CABLE";
+    if (!arc::clock::sqwActive()) line += "  |  RTC SQW missing";
     return line;
 }
 

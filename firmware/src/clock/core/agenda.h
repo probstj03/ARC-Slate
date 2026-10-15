@@ -25,9 +25,9 @@ struct Agenda {
     uint32_t hash() const;
 };
 
-// "Heute", "Morgen", otherwise "Mo 13.10."
+// "Today", "Tomorrow", otherwise "Mon 13.10."
 void dayLabel(int64_t day, int64_t today, char* out, size_t cap);
-// "14:30" / "14:30-15:30"; all-day: "ganztags"
+// "14:30" / "14:30-15:30"; all-day: "all day"
 void timeLabel(const Event& e, char* out, size_t cap);
 
 }  // namespace ac

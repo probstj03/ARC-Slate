@@ -270,7 +270,7 @@ void handleInput() {
     }
     if (s_switchAtMs && (int32_t)(millis() - s_switchAtMs) >= 0) {
         s_switchAtMs = 0;
-        if (!bootsel::switchToOther()) mtx::showOverlay("SLATE FEHLT", 2500);
+        if (!bootsel::switchToOther()) mtx::showOverlay("NO SLATE", 2500);
         else mtx::clearOverlay();
     }
 }

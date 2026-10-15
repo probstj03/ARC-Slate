@@ -21,6 +21,7 @@
 #include "bootsel.h"
 #include "clap.h"
 #include "epaper.h"
+#include "epd_driver.h"
 #include "matrix.h"
 #include "matrix_slate.h"
 #include "pins.h"
@@ -51,7 +52,7 @@ void onJam(const arc::engine::JamStatus& j) {
     ev["aging"] = j.aging;
     arc::net::send(ev);
     arc::events::append(ev);
-    mtx::showOverlay("KABEL AB", 3000);
+    mtx::showOverlay("UNPLUG", 3000);
 }
 
 void printHelp() {
@@ -69,6 +70,7 @@ void printHelp() {
         "  c / f            Klappe simulieren / Blitz testen\n"
         "  mtx 0|1|2        Matrix normal / alle LEDs / Modulnummern\n"
         "  epd              E-Ink neu zeichnen\n"
+        "  epdtest          E-Ink Testbild | epdspi HZ  E-Ink-Takt setzen (Standard 2000000)\n"
         "  enc / encrev     Encoder-Debug / Drehrichtung umkehren\n"
         "  i2c              I2C-Scan\n"
         "  take N | scene N | shot X | roll A001 | bright 0-15\n"
@@ -190,6 +192,14 @@ void handleSerial() {
     else if (cmd == "f") clap::testFlash();
     else if (cmd == "mtx") mtx::setTestMode((uint8_t)arg.toInt());
     else if (cmd == "epd") epd::requestCard();
+    else if (cmd == "epdtest") epd::requestTest();
+    else if (cmd == "epdpins") epd::probePins();
+    else if (cmd == "epdlab") epd::requestLab();
+    else if (cmd == "epdpartial") { epd::setPartial(arg.toInt() != 0); }
+    else if (cmd == "epdspi") {
+        if (arg.toInt() > 0) epddrv::setSpiHz((uint32_t)arg.toInt());
+        Serial.printf("E-Ink SPI-Takt: %lu Hz\n", (unsigned long)epddrv::spiHz());
+    }
     else if (cmd == "enc") { static bool dbg = false; dbg = !dbg; ui::setEncoderDebug(dbg); Serial.printf("Encoder-Debug %s\n", dbg ? "an" : "aus"); }
     else if (cmd == "encrev") {
         state::lock(); state::settings().encReverse = !state::settings().encReverse; state::touch(); state::unlock();

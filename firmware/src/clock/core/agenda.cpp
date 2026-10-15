@@ -74,14 +74,14 @@ uint32_t Agenda::hash() const {
 
 void dayLabel(int64_t day, int64_t today, char* out, size_t cap) {
     const int64_t diff = (day - today) / 86400;
-    if (diff == 0) { snprintf(out, cap, "Heute"); return; }
-    if (diff == 1) { snprintf(out, cap, "Morgen"); return; }
+    if (diff == 0) { snprintf(out, cap, "Today"); return; }
+    if (diff == 1) { snprintf(out, cap, "Tomorrow"); return; }
     const Civil c = fromSec(day);
     snprintf(out, cap, "%s %d.%d.", weekdayName(weekday(daysOf(day)), true), c.day, c.month);
 }
 
 void timeLabel(const Event& e, char* out, size_t cap) {
-    if (e.allDay) { snprintf(out, cap, "ganztags"); return; }
+    if (e.allDay) { snprintf(out, cap, "all day"); return; }
     const Civil a = fromSec(e.start);
     if (e.end > e.start) {
         const Civil b = fromSec(e.end);

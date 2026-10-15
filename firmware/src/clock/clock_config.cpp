@@ -32,8 +32,8 @@ void begin() {
     s_cfg.epdHour = s_prefs.getUChar("epdH", s_cfg.epdHour);
     s_cfg.epdMinute = s_prefs.getUChar("epdM", s_cfg.epdMinute);
     s_cfg.epdOnNewEvents = s_prefs.getBool("epdNew", false);
-    s_cfg.brightnessDay = s_prefs.getUChar("brD", s_cfg.brightnessDay);
-    s_cfg.brightnessNight = s_prefs.getUChar("brN", s_cfg.brightnessNight);
+    s_cfg.brightnessDay = s_prefs.getUChar("brD1", s_cfg.brightnessDay);
+    s_cfg.brightnessNight = s_prefs.getUChar("brN1", s_cfg.brightnessNight);
     s_cfg.idleOffMin = s_prefs.getUShort("idleOff", 0);
     s_cfg.reminderMin = s_prefs.getUChar("remind", s_cfg.reminderMin);
     s_cfg.calendarMin = s_prefs.getUShort("calMin", s_cfg.calendarMin);
@@ -100,8 +100,8 @@ void save() {
     s_prefs.putUChar("epdH", s_cfg.epdHour);
     s_prefs.putUChar("epdM", s_cfg.epdMinute);
     s_prefs.putBool("epdNew", s_cfg.epdOnNewEvents);
-    s_prefs.putUChar("brD", s_cfg.brightnessDay);
-    s_prefs.putUChar("brN", s_cfg.brightnessNight);
+    s_prefs.putUChar("brD1", s_cfg.brightnessDay);
+    s_prefs.putUChar("brN1", s_cfg.brightnessNight);
     s_prefs.putUShort("idleOff", s_cfg.idleOffMin);
     s_prefs.putUChar("remind", s_cfg.reminderMin);
     s_prefs.putUShort("calMin", s_cfg.calendarMin);

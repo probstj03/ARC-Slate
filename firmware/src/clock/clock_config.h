@@ -25,8 +25,8 @@ struct ClockConfig {
     bool epdOnNewEvents = false;   // extra refresh when new events appear during the day
 
     // LED matrices
-    uint8_t brightnessDay = 8;     // 0..15
-    uint8_t brightnessNight = 2;   // between sunset and sunrise
+    uint8_t brightnessDay = 1;     // 0..15 (low on purpose: 16 modules pulse the supply)
+    uint8_t brightnessNight = 1;   // between sunset and sunrise
     uint16_t idleOffMin = 0;       // matrices off after n minutes with the lid open (0 = never)
     uint8_t reminderMin = 10;      // announce events n minutes before they start (0 = off)
 
