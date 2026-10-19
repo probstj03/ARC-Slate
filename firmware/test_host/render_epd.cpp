@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string>
 #include "civil.h"
+#include "fold.h"
 #include "ics.h"
 #include "todo.h"
 #include "weather.h"
@@ -43,8 +44,8 @@ int64_t L(int y, int mo, int d, int h = 0, int mi = 0) {
 Event ev(int64_t start, int64_t end, bool allDay, const char* title, const char* loc = "") {
     Event e;
     e.start = start; e.end = end; e.allDay = allDay;
-    strncpy(e.summary, title, sizeof(e.summary) - 1);
-    strncpy(e.location, loc, sizeof(e.location) - 1);
+    foldAscii(e.summary, sizeof(e.summary), title);      // UTF-8 -> Latin-1 like the iCal parser
+    foldAscii(e.location, sizeof(e.location), loc);
     return e;
 }
 
@@ -104,13 +105,13 @@ int main(int argc, char** argv) {
         Agenda& a = data->agenda;
         a.add(ev(L(2026, 10, 12), L(2026, 10, 13), true, "Geburtstag Oma"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 12, 9, 30), L(2026, 10, 12, 10, 30), false, "Team-Meeting", "Raum 4"), today, today + 7 * 86400);
-        a.add(ev(L(2026, 10, 12, 14, 30), L(2026, 10, 12, 15, 30), false, "Zahnarzt Dr. Mueller & Kollegen", "Hauptstrasse 5"), today, today + 7 * 86400);
+        a.add(ev(L(2026, 10, 12, 14, 30), L(2026, 10, 12, 15, 30), false, "Zahnarzt Dr. Müller & Kollegen", "Hauptstraße 5"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 13, 8, 0), L(2026, 10, 13, 18, 0), false, "Dreh Szene 12 (Studio Nord)", "Hamburg"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 13, 11, 0), L(2026, 10, 13, 11, 30), false, "Telefonat Versicherung"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 14), L(2026, 10, 16), true, "Urlaub Anna"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 15, 7, 42), L(2026, 10, 15, 11, 15), false, "Zug nach Hamburg ICE 574 Gleis 8", "Hbf"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 16, 19, 0), L(2026, 10, 16, 22, 0), false, "Kino mit Freunden"), today, today + 7 * 86400);
-        a.add(ev(L(2026, 10, 17, 10, 0), L(2026, 10, 17, 11, 0), false, "Fruehstueck"), today, today + 7 * 86400);
+        a.add(ev(L(2026, 10, 17, 10, 0), L(2026, 10, 17, 11, 0), false, "Frühstück"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 18, 10, 0), L(2026, 10, 18, 11, 0), false, "Sonntagsspaziergang"), today, today + 7 * 86400);
         a.finalize();
         data->src[clockdata::SRC_CALENDAR].ok = true;

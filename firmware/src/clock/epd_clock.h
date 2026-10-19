@@ -1,21 +1,27 @@
 #pragma once
-// ARC-Clock e-ink: a static daily overview (date, moon, weather with sunrise/sunset, calendar,
-// to-do list). No clock face: the time is shown on the LED matrices.
+// ARC-Clock e-ink: the static overview (date, moon, weather forecast of the day, calendar, to-do list).
+// Everything current (time, current weather, reminders) is on the LED matrices.
 //
-// Refresh policy: one full refresh per day at the configured time (default 05:30), plus after
-// a power loss if today's refresh is missing, and on request. Never while the lid is open
-// (unless forced), because a full refresh flashes black and white.
+// Refresh policy (as rarely as possible):
+//  - every 15 minutes the picture is drawn invisibly and hashed; only if it differs from the picture on the
+//    panel (new event, task done, new day ...) the panel is refreshed;
+//  - the weather on the panel is the forecast of the daily refresh (default 05:30) and does not change during
+//    the day, so weather updates never trigger a refresh;
+//  - once after every start (the slate firmware may have drawn the panel) and on request;
+//  - with the lid open a change waits until it closes (at most 2 h).
 #include <Arduino.h>
 
 namespace epdclock {
 
-void begin();                       // loads the last-refresh day from NVS
+void begin();                       // loads the state from NVS
 void startTask();
 
-// Refresh as soon as possible (waits for fresh data first). `force`: even with the lid open.
+// Refresh as soon as possible (with fresh data), even with the lid open.
 void request(bool force = false);
+// The lid was closed: a change that waited for it is drawn now.
+void lidClosed();
 
-int64_t lastRefreshDay();           // days since 1970 (local), 0 = never
+int64_t lastRefreshDay();           // days since 1970 (local) of the last daily refresh, 0 = never
 String statusLine();                // for the serial status
 
 }  // namespace epdclock

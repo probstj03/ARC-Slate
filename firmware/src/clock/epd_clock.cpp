@@ -13,24 +13,64 @@ namespace {
 
 epddrv::Display& d = epddrv::display();
 
-clockdata::Data* s_snap = nullptr;          // copy of the data taken for one drawing pass
+constexpr int64_t CHECK_EVERY_SEC = 15 * 60;       // look for changes every 15 minutes
+constexpr int64_t LID_DEFER_MAX_SEC = 2 * 3600;    // a change waits at most this long for the lid to close
+
+clockdata::Data* s_snap = nullptr;          // copy of the data for one drawing pass
+ac::Weather* s_wx = nullptr;                // weather as of the morning refresh (frozen during the day)
 TaskHandle_t s_task = nullptr;
-volatile bool s_requested = false, s_forced = false;
-int64_t s_lastDay = 0;                      // local day number of the last refresh
+volatile bool s_requested = false;
+uint32_t s_drawnHash = 0;                   // hash of the picture on the panel (0 = unknown)
+int64_t s_lastDay = 0;                      // local day of the last daily refresh (weather snapshot)
 int64_t s_lastRefreshSec = 0;
-uint32_t s_calRevDrawn = 0;
-uint32_t s_refreshCount = 0;
+int64_t s_nextCheckSec = 0;
+int64_t s_pendingSince = 0;                 // a change waits for the lid since then (0 = none)
+uint32_t s_refreshCount = 0, s_checkCount = 0;
 Preferences s_prefs;
 
 int64_t nowSec() { return arc::clock::nowNs() / 1000000000LL; }
 
-// ── refresh ──────────────────────────────────────────────────────────────
+// Draws the layout into nothing and hashes the pixels: same hash = same picture = no refresh needed.
+class HashGfx : public Adafruit_GFX {
+public:
+    HashGfx() : Adafruit_GFX(epdlayout::W, epdlayout::H) {}
+    uint32_t hash = 2166136261u;
+    void drawPixel(int16_t x, int16_t y, uint16_t color) override {
+        if (color) return;                                       // white is the background: only black pixels count
+        hash = (hash ^ ((uint32_t)x | ((uint32_t)y << 10))) * 16777619u;
+    }
+    void fillScreen(uint16_t color) override { hash = (hash ^ color) * 16777619u; }
+};
+
+epdlayout::Options options(String& placeKeep) {
+    placeKeep = clockcfg::copy().place;
+    epdlayout::Options opt;
+    opt.place = placeKeep.c_str();
+    opt.version = "ARC-Clock " ARC_FW_VERSION;
+    return opt;
+}
+
+// Copies the current data, with the weather of the morning refresh.
+void takeSnapshot() {
+    if (!s_snap) s_snap = new clockdata::Data();
+    if (!s_wx) s_wx = new ac::Weather();
+    clockdata::lock();
+    *s_snap = clockdata::data();
+    clockdata::unlock();
+    if (s_wx->valid) s_snap->weather = *s_wx;
+}
+
+uint32_t pictureHash(int64_t now) {
+    String place;
+    const epdlayout::Options opt = options(place);
+    HashGfx h;
+    epdlayout::draw(h, *s_snap, now, opt);
+    return h.hash ? h.hash : 1;
+}
 
 bool drawAll(int64_t now) {
-    const String place = clockcfg::copy().place;
-    epdlayout::Options opt;
-    opt.place = place.c_str();
-    opt.version = "ARC-Clock " ARC_FW_VERSION;
+    String place;
+    const epdlayout::Options opt = options(place);
     spibus::lock();
     d.setFullWindow();
     epdlayout::draw(d, *s_snap, now, opt);
@@ -39,29 +79,28 @@ bool drawAll(int64_t now) {
     return ok;
 }
 
-// Returns false if the panel did not refresh (then the day is not marked as done and the task retries).
-bool doRefresh() {
-    clockdata::requestAll();
-    clockdata::waitForFresh(60000);         // without network: the cached data is drawn
-    if (!s_snap) s_snap = new clockdata::Data();
-    clockdata::lock();
-    *s_snap = clockdata::data();
-    clockdata::unlock();
-    const int64_t now = nowSec();
-    Serial.printf("[EPD] Aktualisierung (%u Termine, %d Aufgaben, Wetter %s)\n", (unsigned)s_snap->agenda.n, s_snap->taskCount,
+void saveState() {
+    s_prefs.begin("clock", false);
+    s_prefs.putLong64("epdDay", s_lastDay);
+    s_prefs.putULong("epdHash", s_drawnHash);
+    s_prefs.end();
+}
+
+// Refreshes the panel with the snapshot. Returns false if the panel did not refresh.
+bool refreshNow(int64_t now, uint32_t hash, const char* why) {
+    Serial.printf("[EPD] Aktualisierung (%s): %u Termine, %d Aufgaben, Wetter %s\n", why, (unsigned)s_snap->agenda.n, s_snap->taskCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
     if (!drawAll(now)) {
-        Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch in 5 min");
+        Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch bei der naechsten Pruefung");
+        s_drawnHash = 0;
         return false;
     }
-    s_lastDay = ac::daysOf(now);
+    s_drawnHash = hash;
     s_lastRefreshSec = now;
-    s_calRevDrawn = s_snap->src[clockdata::SRC_CALENDAR].revision;
     s_refreshCount++;
-    s_prefs.begin("clock", false);
-    s_prefs.putLong64("epdDay", s_lastDay);
-    s_prefs.end();
+    s_pendingSince = 0;
+    saveState();
     Serial.printf("[EPD] fertig in %lu ms\n", (unsigned long)(millis() - t0));
     return true;
 }
@@ -69,34 +108,59 @@ bool doRefresh() {
 bool timePlausible() { return ac::fromSec(nowSec()).year >= 2024; }
 
 void epdTask(void*) {
-    bool bootDone = false;                  // one refresh after every start (date, data of today)
-    uint32_t retryAt = 0;                   // millis() of the next attempt after a failed refresh
+    bool bootDone = false;                  // the slate firmware may have drawn the panel: always draw once after a start
     for (;;) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15000));
         if (!timePlausible()) continue;
-        if (retryAt && (int32_t)(millis() - retryAt) < 0 && !s_requested) continue;
         const ClockConfig cfg = clockcfg::copy();
         const int64_t now = nowSec();
         const int64_t today = ac::daysOf(now);
         const int minutes = (int)((now - ac::dayStart(now)) / 60);
 
-        const bool scheduled = s_lastDay != today && minutes >= cfg.epdHour * 60 + cfg.epdMinute;
-        const bool neverDrawn = s_lastDay == 0;
-        bool newEvents = false;
-        if (cfg.epdOnNewEvents && s_lastDay == today && now - s_lastRefreshSec > 1800) {
-            clockdata::lock();
-            newEvents = clockdata::data().src[clockdata::SRC_CALENDAR].revision != s_calRevDrawn && clockdata::data().src[clockdata::SRC_CALENDAR].ok;
-            clockdata::unlock();
+        // Daily refresh: fresh data and a new weather snapshot (the only time the weather on the panel changes).
+        const bool daily = s_lastDay != today && minutes >= cfg.epdHour * 60 + cfg.epdMinute;
+        const bool requested = s_requested;
+        const bool check = now >= s_nextCheckSec;
+        if (!daily && !requested && !check && bootDone) continue;
+        s_requested = false;
+        s_nextCheckSec = (now / CHECK_EVERY_SEC + 1) * CHECK_EVERY_SEC;   // on the quarter hour
+
+        if (daily || requested || !bootDone) {
+            clockdata::requestAll();
+            clockdata::waitForFresh(60000);     // without network: the cached data is drawn
         }
-        const bool afterBoot = !bootDone;
-        const bool wanted = s_requested || scheduled || neverDrawn || newEvents || afterBoot;
-        if (!wanted) continue;
-        // The daily refresh waits while the lid is open (no flashing in view); after a start, on request
-        // and when the panel was never drawn it runs right away.
-        if (lid::open() && !s_forced && !neverDrawn && !afterBoot && !s_requested) continue;
-        s_requested = s_forced = false;
-        bootDone = true;
-        retryAt = doRefresh() ? 0 : millis() + 5 * 60000;
+        if (!s_wx) s_wx = new ac::Weather();
+        if (daily || !s_wx->valid) {
+            clockdata::lock();
+            *s_wx = clockdata::data().weather;
+            clockdata::unlock();
+            if (daily) {
+                s_lastDay = today;
+                saveState();
+            }
+        }
+        takeSnapshot();
+        const uint32_t hash = pictureHash(now);
+        s_checkCount++;
+
+        if (!bootDone || requested) {
+            refreshNow(now, hash, !bootDone ? "Start" : "Befehl");
+            bootDone = true;
+            continue;
+        }
+        if (hash == s_drawnHash) {
+            s_pendingSince = 0;
+            continue;                           // nothing changed: the panel stays untouched
+        }
+        // A change. With the lid open the refresh (black/white flashing) waits, but not forever.
+        if (lid::open()) {
+            if (!s_pendingSince) s_pendingSince = now;
+            if (now - s_pendingSince < LID_DEFER_MAX_SEC) {
+                Serial.println("[EPD] Aenderung erkannt - wartet bis die Klappe zu ist");
+                continue;
+            }
+        }
+        refreshNow(now, hash, daily ? "taeglich" : "Aenderung");
     }
 }
 
@@ -107,28 +171,35 @@ namespace epdclock {
 void begin() {
     s_prefs.begin("clock", true);
     s_lastDay = s_prefs.getLong64("epdDay", 0);
+    s_drawnHash = s_prefs.getULong("epdHash", 0);
     s_prefs.end();
-    epddrv::init();                          // no drawing: the last picture stays on the panel
-    Serial.printf("[EPD] letzter Refresh: %s\n", s_lastDay ? String((long)s_lastDay).c_str() : "noch nie");
+    epddrv::init();                          // no drawing here: the task draws once the time and the data are there
 }
 
 void startTask() {
     xTaskCreatePinnedToCore(epdTask, "EPDCLK", 8192, nullptr, 1, &s_task, 0);
 }
 
-void request(bool force) {
+void request(bool) {
     s_requested = true;
-    if (force) s_forced = true;
     if (s_task) xTaskNotifyGive(s_task);
+}
+
+void lidClosed() {
+    if (s_pendingSince && s_task) {
+        s_nextCheckSec = 0;                  // a waiting change is drawn right away
+        xTaskNotifyGive(s_task);
+    }
 }
 
 int64_t lastRefreshDay() { return s_lastDay; }
 
 String statusLine() {
-    char buf[96];
-    if (!s_lastDay) return "E-Ink: noch nie aktualisiert";
-    const ac::Civil c = ac::fromSec(s_lastRefreshSec ? s_lastRefreshSec : s_lastDay * 86400);
-    snprintf(buf, sizeof(buf), "E-Ink: zuletzt %d.%d.%s (%u Refreshes seit Start)", c.day, c.month, s_lastRefreshSec ? "" : " (vor Neustart)", (unsigned)s_refreshCount);
+    char buf[128];
+    if (!s_lastRefreshSec) return "E-Ink: seit dem Start noch nicht gezeichnet";
+    const ac::Civil c = ac::fromSec(s_lastRefreshSec);
+    snprintf(buf, sizeof(buf), "E-Ink: zuletzt %d.%d. %02d:%02d, %u Refreshes / %u Pruefungen seit Start%s", c.day, c.month, c.hour,
+             c.minute, (unsigned)s_refreshCount, (unsigned)s_checkCount, s_pendingSince ? ", Aenderung wartet auf die Klappe" : "");
     return String(buf);
 }
 

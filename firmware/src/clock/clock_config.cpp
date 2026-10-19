@@ -29,9 +29,10 @@ void begin() {
     s_cfg.lat = s_prefs.getFloat("lat", s_cfg.lat);
     s_cfg.lon = s_prefs.getFloat("lon", s_cfg.lon);
     s_cfg.place = s_prefs.getString("place", s_cfg.place);
+    s_cfg.locAuto = s_prefs.getBool("locAuto", true);
     s_cfg.epdHour = s_prefs.getUChar("epdH", s_cfg.epdHour);
     s_cfg.epdMinute = s_prefs.getUChar("epdM", s_cfg.epdMinute);
-    s_cfg.epdOnNewEvents = s_prefs.getBool("epdNew", false);
+    s_cfg.reminderFlash = s_prefs.getBool("remFlash", true);
     s_cfg.brightnessDay = s_prefs.getUChar("brD1", s_cfg.brightnessDay);
     s_cfg.brightnessNight = s_prefs.getUChar("brN1", s_cfg.brightnessNight);
     s_cfg.idleOffMin = s_prefs.getUShort("idleOff", 0);
@@ -69,6 +70,7 @@ void begin() {
         s_cfg.lat = CLOCK_LAT;
         s_cfg.lon = CLOCK_LON;
         s_cfg.place = CLOCK_PLACE;
+        s_cfg.locAuto = false;
     }
 #endif
     if (first) save();
@@ -97,9 +99,10 @@ void save() {
     s_prefs.putFloat("lat", s_cfg.lat);
     s_prefs.putFloat("lon", s_cfg.lon);
     s_prefs.putString("place", s_cfg.place);
+    s_prefs.putBool("locAuto", s_cfg.locAuto);
     s_prefs.putUChar("epdH", s_cfg.epdHour);
     s_prefs.putUChar("epdM", s_cfg.epdMinute);
-    s_prefs.putBool("epdNew", s_cfg.epdOnNewEvents);
+    s_prefs.putBool("remFlash", s_cfg.reminderFlash);
     s_prefs.putUChar("brD1", s_cfg.brightnessDay);
     s_prefs.putUChar("brN1", s_cfg.brightnessNight);
     s_prefs.putUShort("idleOff", s_cfg.idleOffMin);
@@ -121,10 +124,11 @@ void print(Stream& out) {
     if (n == 0) out.println("Kalender  : (keiner)");
     out.printf("To-Do     : %s%s%s\n", c.todoPath.isEmpty() ? "(nicht gesetzt)" : c.todoPath.c_str(),
                c.todoHeading.isEmpty() ? "" : "  Abschnitt ", c.todoHeading.c_str());
-    out.printf("Ort       : %s  %.4f, %.4f\n", c.place.c_str(), c.lat, c.lon);
-    out.printf("E-Ink     : taeglich %02u:%02u%s\n", c.epdHour, c.epdMinute, c.epdOnNewEvents ? " + bei neuen Terminen" : "");
-    out.printf("Matrix    : Helligkeit Tag %u / Nacht %u, Auto-Aus %u min, Erinnerung %u min vorher\n", c.brightnessDay, c.brightnessNight,
-               c.idleOffMin, c.reminderMin);
+    out.printf("Ort       : %s  %.4f, %.4f  (%s)\n", c.place.c_str(), c.lat, c.lon,
+               c.locAuto ? "automatisch aus der IP, 'loc LAT LON' setzt ihn fest" : "fest, 'loc auto' = aus der IP");
+    out.printf("E-Ink     : Wetter-Stand taeglich %02u:%02u, sonst nur bei Aenderungen (Pruefung alle 15 min)\n", c.epdHour, c.epdMinute);
+    out.printf("Matrix    : Helligkeit Tag %u / Nacht %u (nach Sonnenstand), Auto-Aus %u min, Erinnerung %u min vorher, Blitz %s\n",
+               c.brightnessDay, c.brightnessNight, c.idleOffMin, c.reminderMin, c.reminderFlash ? "an" : "aus");
     out.printf("Intervalle: Kalender %u min, To-Do %u min, Wetter %u min\n", c.calendarMin, c.todoMin, c.weatherMin);
 }
 

@@ -1,7 +1,7 @@
 #pragma once
-// UTF-8 -> ASCII for the GFX fonts (Adafruit GFX fonts only contain 0x20..0x7E).
-// ä->ae ö->oe ü->ue ß->ss, accents dropped, typographic quotes/dashes simplified,
-// emoji and other symbols removed. Pure, host-testable.
+// UTF-8 -> Latin-1 for the e-ink fonts (Lato, glyphs 0x20..0xFF): umlauts, ß, ° and accented letters stay
+// (one byte each), typographic quotes/dashes are simplified, characters outside Latin-1 (emoji, symbols) are
+// dropped. Pure, host-testable. The LED matrix font is ASCII only; mtx::renderText maps the umlauts there.
 #include <stddef.h>
 
 namespace ac {

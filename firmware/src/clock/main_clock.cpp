@@ -27,6 +27,9 @@
 #if __has_include("secrets.h")
 #include "secrets.h"
 constexpr int kDefaultWifiCount = sizeof(kDefaultWifi) / sizeof(kDefaultWifi[0]);
+#elif __has_include("../slate/secrets.h")
+#include "../slate/secrets.h"           // no own secrets.h: the same default networks as the slate
+constexpr int kDefaultWifiCount = sizeof(kDefaultWifi) / sizeof(kDefaultWifi[0]);
 #else
 static const arc::net::DefaultNetwork kDefaultWifi[] = {{"", "", 0}};   // placeholder, no default network
 constexpr int kDefaultWifiCount = 0;
@@ -66,6 +69,8 @@ void onLid(bool open) {
             s_sparkleDay = today;
             clockmatrix::sparkle(1500);
         }
+    } else {
+        epdclock::lidClosed();                // an e-ink change that waited for the lid
     }
 }
 
@@ -101,15 +106,15 @@ void printHelp() {
         "  nc url URL | nc user NAME | nc pass APP-PASSWORT | nc insecure 0|1\n"
         "  cal add PFAD | cal clear      CalDAV-Pfad (z. B. /remote.php/dav/calendars/julian/personal/)\n"
         "  todo path DATEI | todo head UEBERSCHRIFT | todo head -\n"
-        "  loc LAT LON [ORT]   Standort fuer das Wetter\n"
+        "  loc LAT LON [ORT] | loc auto   Standort fuer das Wetter (auto: aus der oeffentlichen IP)\n"
         "  fetch [cal|todo|wx|all]   Daten jetzt abrufen und anzeigen\n"
-        "  epd | epd force     E-Ink jetzt aktualisieren (force: auch bei offener Klappe)\n"
-        "  epdtime HH:MM       taegliche Aktualisierung\n"
-        "  bright day|night N  Helligkeit 0-15 | idle MIN | remind MIN\n"
+        "  epd                 E-Ink jetzt aktualisieren (sonst nur bei Aenderungen, Pruefung alle 15 min)\n"
+        "  epdtime HH:MM       taeglicher Wetter-Stand auf dem E-Ink\n"
+        "  bright day|night N  Helligkeit 0-15 (folgt dem Sonnenstand) | idle MIN | remind MIN | flash 0|1\n"
         "  every cal|todo|wx MIN   Abrufintervalle\n"
         "  wifi | wifi add SSID PASS [PRIO] | wifi clear\n"
         "  time YYYY-MM-DD HH:MM:SS   RTC stellen | n  NTP | sqw  SQW-Flanke messen\n"
-        "  scroll TEXT | sparkle | mtx 0|1|2 (Test)\n"
+        "  scroll TEXT | sparkle | mtx 0|1|2 (Test)    Taster kurz: naechster Termin\n"
         "  mode slate          zur Klappen-Firmware wechseln\n");
 }
 
@@ -167,10 +172,16 @@ void handleConfig(const String& cmd, const String& arg) {
     } else if (cmd == "loc") {
         float lat, lon;
         char place[40] = "";
-        if (sscanf(arg.c_str(), "%f %f %39[^\n]", &lat, &lon, place) >= 2) {
+        if (arg == "auto") {
+            c.locAuto = true;
+            clockdata::relocate();                   // next weather fetch asks ip-api.com first
+            clockdata::request(clockdata::SRC_WEATHER);
+        } else if (sscanf(arg.c_str(), "%f %f %39[^\n]", &lat, &lon, place) >= 2) {
             c.lat = lat; c.lon = lon;
+            c.locAuto = false;
             if (place[0]) c.place = place;
-        } else { Serial.println("loc LAT LON [ORT]"); changed = false; }
+            clockdata::request(clockdata::SRC_WEATHER);
+        } else { Serial.println("loc LAT LON [ORT] | loc auto"); changed = false; }
     } else if (cmd == "epdtime") {
         int h, m;
         if (sscanf(arg.c_str(), "%d:%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60) { c.epdHour = h; c.epdMinute = m; }
@@ -184,6 +195,7 @@ void handleConfig(const String& cmd, const String& arg) {
         else { Serial.println("bright day|night 0-15"); changed = false; }
     } else if (cmd == "idle") c.idleOffMin = (uint16_t)max(0, (int)arg.toInt());
     else if (cmd == "remind") c.reminderMin = (uint8_t)constrain(arg.toInt(), 0, 120);
+    else if (cmd == "flash") c.reminderFlash = arg.toInt() != 0;
     else if (cmd == "every") {
         const int sp = arg.indexOf(' ');
         const String which = sp < 0 ? arg : arg.substring(0, sp);
@@ -212,7 +224,7 @@ void handleSerial() {
     else if (cmd == "help") printHelp();
     else if (cmd == "cfg") clockcfg::print(Serial);
     else if (cmd == "nc" || cmd == "cal" || cmd == "todo" || cmd == "loc" || cmd == "epdtime" || cmd == "bright" || cmd == "idle" ||
-             cmd == "remind" || cmd == "every") handleConfig(cmd, arg);
+             cmd == "remind" || cmd == "flash" || cmd == "every") handleConfig(cmd, arg);
     else if (cmd == "fetch") {
         using clockdata::Source;
         if (arg.isEmpty() || arg == "all" || arg == "cal") clockdata::fetchNowVerbose(clockdata::SRC_CALENDAR, Serial);
@@ -260,7 +272,7 @@ void handleInput() {
         switch (e) {
             case input::TURN_CW: if (lid::open()) clockmatrix::adjustBrightness(+1); break;
             case input::TURN_CCW: if (lid::open()) clockmatrix::adjustBrightness(-1); break;
-            case input::PRESS_SHORT: if (lid::open()) clockmatrix::nextPage(); break;
+            case input::PRESS_SHORT: if (lid::open()) clockmatrix::showNext(); break;
             case input::PRESS_LONG:
                 mtx::showOverlay("SLATE", 0);
                 s_switchAtMs = millis() + 900;

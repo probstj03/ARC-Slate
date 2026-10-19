@@ -75,7 +75,7 @@ void printHelp() {
         "  spidrive 0-3     Treiberstaerke SCK/MOSI (0 = schwach, weniger Ueberschwinger; Standard 0)\n"
         "  enc / encrev     Encoder-Debug / Drehrichtung umkehren\n"
         "  i2c              I2C-Scan\n"
-        "  take N | scene N | shot X | roll A001 | bright 0-15\n"
+        "  take N | scene N | shot X | roll A001 | bright [day|night] 0-15 (folgt dem Sonnenstand)\n"
         "  lat flash US     Blitz-Latenz setzen (Mikrosekunden)\n"
         "  wifi | wifi add SSID PASS [PRIO] | wifi clear\n"
         "  log | log clear  Ereignis-Log anzeigen / loeschen\n");
@@ -218,9 +218,17 @@ void handleSerial() {
     else if (cmd == "i2c") i2cScan();
     else if (cmd == "take" || cmd == "scene" || cmd == "shot" || cmd == "roll") setShotValue(cmd, arg);
     else if (cmd == "bright") {
-        const uint8_t b = (uint8_t)constrain(arg.toInt(), 0, 15);
-        state::lock(); state::settings().brightness = b; state::touch(); state::unlock();
-        mtx::setBrightness(b);
+        // bright N: value of the current phase | bright day N | bright night N (the renderer applies it)
+        const int sp = arg.indexOf(' ');
+        const String which = sp < 0 ? String() : arg.substring(0, sp);
+        const uint8_t b = (uint8_t)constrain(arg.substring(sp + 1).toInt(), 0, 15);
+        const bool night = which == "night" || (which.isEmpty() && slatematrix::isNight());
+        state::lock();
+        (night ? state::settings().brightnessNight : state::settings().brightness) = b;
+        state::touch();
+        const uint8_t d = state::settings().brightness, n = state::settings().brightnessNight;
+        state::unlock();
+        Serial.printf("Helligkeit: Tag %u, Nacht %u (jetzt %s)\n", d, n, slatematrix::isNight() ? "Nacht" : "Tag");
     }
     else if (cmd == "lat" && arg.startsWith("flash ")) {
         state::lock(); state::settings().flashLatencyUs = arg.substring(6).toInt(); state::touch(); state::unlock();

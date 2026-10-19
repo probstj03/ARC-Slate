@@ -79,7 +79,7 @@ static void testCivil() {
 static void testFold() {
     char out[64];
     foldAscii(out, sizeof(out), "M\xC3\xBCller Stra\xC3\x9F" "e \xC3\x84\xC3\x96\xC3\x9C \xC3\xA9");
-    CHECK_STR(out, "Mueller Strasse AeOeUe e");
+    CHECK_STR(out, "M\xFCller Stra\xDF" "e \xC4\xD6\xDC \xE9");   // Latin-1: one byte per umlaut
     foldAscii(out, sizeof(out), "a \xE2\x80\x93 b \xE2\x80\x9Cx\xE2\x80\x9D \xE2\x80\xA6 5\xE2\x82\xAC");
     CHECK_STR(out, "a - b \"x\" ... 5EUR");
     foldAscii(out, sizeof(out), "Party \xF0\x9F\x8E\x89 jetzt");        // emoji dropped
@@ -170,8 +170,8 @@ static void checkEvents() {
     CHECK(a.start == L(2026, 10, 13, 14, 30));            // 12:30 UTC = 14:30 CEST
     CHECK(a.end == L(2026, 10, 13, 15, 30));
     CHECK(!a.allDay);
-    CHECK_STR(a.summary, "Zahnarzt , Dr. Mueller & Kollegen");
-    CHECK_STR(a.location, "Hauptstrasse 5");
+    CHECK_STR(a.summary, "Zahnarzt , Dr. M\xFCller & Kollegen");
+    CHECK_STR(a.location, "Hauptstra\xDF" "e 5");
     const Event& b = g_events[1];
     CHECK(b.start == L(2026, 10, 14, 9, 0));
     CHECK(b.end == L(2026, 10, 14, 10, 30));
@@ -247,7 +247,7 @@ static void testTodo() {
         CHECK_STR(g_tasks[1].text, "Steuer machen");
         CHECK(g_tasks[1].hasDate && g_tasks[1].date == L(2026, 10, 15));
         CHECK(g_tasks[1].priority == 2);
-        CHECK_STR(g_tasks[2].text, "Bericht an Herrn Mueller senden Projekt");
+        CHECK_STR(g_tasks[2].text, "Bericht an Herrn M\xFCller senden Projekt");
         CHECK(g_tasks[2].date == L(2026, 10, 12));
         CHECK_STR(g_tasks[3].text, "Unteraufgabe");
         CHECK(g_tasks[3].date == L(2026, 10, 11));
@@ -275,7 +275,7 @@ static void testTodo() {
     sortTasks(g_tasks.data(), (int)g_tasks.size(), today);
     CHECK_STR(g_tasks[0].text, "Unteraufgabe");              // overdue (11.10.)
     CHECK(g_tasks[0].overdueFlag);
-    CHECK_STR(g_tasks[1].text, "Bericht an Herrn Mueller senden Projekt");   // today
+    CHECK_STR(g_tasks[1].text, "Bericht an Herrn M\xFCller senden Projekt");   // today
     CHECK_STR(g_tasks[2].text, "Steuer machen");             // in 3 days
     CHECK_STR(g_tasks[3].text, "Link Doku");                 // in 8 days = later
     CHECK_STR(g_tasks[4].text, "Ohne Datum");                // undated

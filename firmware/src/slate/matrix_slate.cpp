@@ -1,5 +1,6 @@
 #include "matrix_slate.h"
 #include <ArcCore.h>
+#include "daylight.h"
 #include "matrix.h"
 #include "state.h"
 
@@ -37,12 +38,44 @@ void renderTimecode(const arc::Timecode& tc) {
     mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
 }
 
-void render(uint32_t, bool redraw, bool tcOwned, mtx::Result& out) {
+// Brightness follows the sun: day / night value from the settings, 30 min transition (common/daylight.h).
+bool s_night = false;
+
+void applyBrightness() {
+    static int lastApplied = -1;
+    static int sunDay = -1, rise = 7 * 60, set = 19 * 60;
+    static double lat = 0, lon = 0;
+    const DateTime now = arc::clock::now();                   // local time
+    if (now.year() < 2024) return;
+    if (sunDay != now.day()) {                                // once a day (and at start)
+        sunDay = now.day();
+        daylight::place(lat, lon);
+        const int offset = daylight::cetOffsetMin(now.year(), now.month(), now.day(), now.hour());
+        if (!daylight::sunTimes(now.year(), now.month(), now.day(), lat, lon, offset, rise, set)) { rise = 7 * 60; set = 19 * 60; }
+    }
+    const int minute = now.hour() * 60 + now.minute();
+    s_night = minute < rise || minute >= set;
+    state::lock();
+    const uint8_t day = state::settings().brightness, night = state::settings().brightnessNight;
+    state::unlock();
+    const int b = daylight::level(minute, rise, set, day, night);
+    if (b != lastApplied) {
+        lastApplied = b;
+        mtx::setBrightness((uint8_t)b);
+    }
+}
+
+void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     static uint32_t lastRev = 0;
+    static uint32_t lastBrightMs = 0;
     static arc::Timecode lastTc;
     bool dataDirty = redraw;
     const uint32_t rev = state::revision();
-    if (rev != lastRev) { lastRev = rev; dataDirty = true; }
+    if (rev != lastRev) { lastRev = rev; dataDirty = true; lastBrightMs = nowMs - 1000; }
+    if (nowMs - lastBrightMs >= 1000) {
+        lastBrightMs = nowMs;
+        applyBrightness();
+    }
 
     if (!tcOwned) {
         const arc::Timecode tc = arc::engine::current();
@@ -63,5 +96,7 @@ void render(uint32_t, bool redraw, bool tcOwned, mtx::Result& out) {
 namespace slatematrix {
 
 void begin() { mtx::setRenderer(render); }
+
+bool isNight() { return s_night; }
 
 }  // namespace slatematrix

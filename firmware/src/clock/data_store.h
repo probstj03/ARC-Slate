@@ -27,4 +27,8 @@ void fetchNowVerbose(Source s, Print& out);
 
 const char* sourceName(Source s);
 
+// Automatic place (config locAuto): looked up once per start from the public IP before the first weather fetch.
+// relocate() makes the next weather fetch look it up again.
+void relocate();
+
 }  // namespace clockdata

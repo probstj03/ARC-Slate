@@ -21,6 +21,19 @@ struct Canvas {
 // Weather: `frame` counts at about 6 per second. `day` picks sun or moon for clear skies.
 void drawWeather(Canvas& c, WxKind kind, bool day, uint32_t frame);
 
+// The whole data chain (9 modules = 72x8) as one surface.
+constexpr int kWideW = 72;
+struct WideCanvas {
+    uint8_t col[kWideW] = {0};
+    void clear() { for (auto& c : col) c = 0; }
+    void set(int x, int y) { if (x >= 0 && x < kWideW && y >= 0 && y < kFieldH) col[x] |= (uint8_t)(0x80 >> y); }
+    bool get(int x, int y) const { return x >= 0 && x < kWideW && y >= 0 && y < kFieldH && (col[x] & (0x80 >> y)); }
+};
+
+// Weather scene over the whole width: clouds drift across all modules, rain / snow falls everywhere,
+// sun or moon (with stars) on the left. No flashing; `frame` counts at about 6 per second.
+void drawWeatherWide(WideCanvas& c, WxKind kind, bool day, uint32_t frame);
+
 // 8x8 moon disc at column x0; `phaseFrac` = age / synodic month (0 new, 0.5 full).
 void drawMoon(Canvas& c, int x0, double phaseFrac);
 

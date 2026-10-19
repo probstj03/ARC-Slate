@@ -4,6 +4,7 @@
 #include "epaper.h"
 #include <ArcCore.h>
 #include "matrix.h"
+#include "matrix_slate.h"
 #include "slate_link.h"
 #include "pins.h"
 #include "state.h"
@@ -64,7 +65,7 @@ uint32_t s_cardDueMs = 0;     // deferred full e-ink refresh after take changes
 int s_pendingIndex = 0;
 // Value backup for "discard".
 ShotInfo s_backupShot;
-uint8_t s_backupBright = 8;
+uint8_t s_backupBright = 8, s_backupBrightNight = 1;
 
 int indexOfMode(Mode m) {
     for (int i = 0; i < 5; i++) if (kModes[i] == m) return i;
@@ -86,7 +87,7 @@ String valueText(int item) {
         case IT_SCENE: snprintf(buf, sizeof(buf), "%d", s.scene); break;
         case IT_ROLL:  snprintf(buf, sizeof(buf), "%c%03d", s.cam, s.rollNum); break;
         case IT_CAM:   snprintf(buf, sizeof(buf), "%c", s.cam); break;
-        case IT_BRIGHT: snprintf(buf, sizeof(buf), "%u", st.brightness); break;
+        case IT_BRIGHT: snprintf(buf, sizeof(buf), "%s%u", slatematrix::isNight() ? "N" : "T", slatematrix::isNight() ? st.brightnessNight : st.brightness); break;
         case IT_INFO:  snprintf(buf, sizeof(buf), "%s", arc::net::ipString().c_str()); break;
         default: buf[0] = 0;
     }
@@ -141,10 +142,10 @@ void stepValue(int item, int delta) {
             userBits = true;
             break;
         }
-        case IT_BRIGHT: {
+        case IT_BRIGHT: {           // the value of the current phase (day / night); the renderer applies it
             Settings& st = state::settings();
-            st.brightness = (uint8_t)constrain((int)st.brightness + delta, 0, 15);
-            mtx::setBrightness(st.brightness);
+            uint8_t& b = slatematrix::isNight() ? st.brightnessNight : st.brightness;
+            b = (uint8_t)constrain((int)b + delta, 0, 15);
             break;
         }
         default: break;
@@ -207,6 +208,7 @@ void onShortPress() {
         state::lock();
         s_backupShot = state::shot();
         s_backupBright = state::settings().brightness;
+        s_backupBrightNight = state::settings().brightnessNight;
         state::unlock();
         s_ui = UI_EDIT;
         renderMenu();
@@ -237,9 +239,9 @@ void onLongPress() {
     state::lock();
     state::shot() = s_backupShot;
     state::settings().brightness = s_backupBright;
+    state::settings().brightnessNight = s_backupBrightNight;
     state::touch();
     state::unlock();
-    mtx::setBrightness(s_backupBright);
     slate::updateUserBits();
     s_ui = UI_MENU;
     renderMenu();

@@ -67,7 +67,14 @@ int renderTextImpl(const char* text, uint8_t* cols, int width, int padLeft, bool
     memset(cols, 0, width);
     int c = padLeft;
     for (int i = 0; text[i] && c < width; i++) {
-        const char ch = (char)toupper((unsigned char)text[i]);
+        unsigned char raw = (unsigned char)text[i];
+        // Latin-1 umlauts (calendar titles of ARC-Clock) -> the plain letter, ß -> S, ° -> the degree glyph
+        if (raw == 0xC4 || raw == 0xE4) raw = 'A';
+        else if (raw == 0xD6 || raw == 0xF6) raw = 'O';
+        else if (raw == 0xDC || raw == 0xFC) raw = 'U';
+        else if (raw == 0xDF) raw = 'S';
+        else if (raw == 0xB0) raw = '^';
+        const char ch = (char)toupper(raw);
         const uint8_t* glyph = nullptr;
         uint8_t narrow = 0;
         int w = 5;

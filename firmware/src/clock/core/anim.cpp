@@ -165,6 +165,138 @@ void drawWeather(Canvas& c, WxKind kind, bool day, uint32_t frame) {
     }
 }
 
+namespace {
+
+template <typename C>
+void cloudAt(C& c, int x, int y) {
+    for (int r = 0; r < kCloudH; r++)
+        for (int k = 0; k < kCloudW; k++)
+            if (kCloud[r][k] == 'X') c.set(x + k, y + r);
+}
+
+template <typename C>
+void sunAt(C& c, int ox, int oy, uint32_t frame) {
+    static const char* const disc[4] = {".XX.", "XXXX", "XXXX", ".XX."};
+    for (int r = 0; r < 4; r++)
+        for (int k = 0; k < 4; k++)
+            if (disc[r][k] == 'X') c.set(ox + k, oy + r);
+    if ((frame / 3) & 1) {
+        c.set(ox - 2, oy - 2); c.set(ox + 5, oy - 2); c.set(ox - 2, oy + 5); c.set(ox + 5, oy + 5);
+        c.set(ox - 1, oy - 1); c.set(ox + 4, oy - 1); c.set(ox - 1, oy + 4); c.set(ox + 4, oy + 4);
+    } else {
+        c.set(ox + 1, oy - 2); c.set(ox + 2, oy - 2); c.set(ox + 1, oy + 5); c.set(ox + 2, oy + 5);
+        c.set(ox - 2, oy + 1); c.set(ox - 2, oy + 2); c.set(ox + 5, oy + 1); c.set(ox + 5, oy + 2);
+    }
+}
+
+// n clouds drifting to the right at different speeds, evenly spread (wrap around the width).
+void driftingClouds(WideCanvas& c, int n, uint32_t frame, int minX) {
+    const int period = kWideW - minX + kCloudW;
+    for (int i = 0; i < n; i++) {
+        const int speed = 3 + (i % 3);                         // frames per pixel
+        const int x = (int)(((frame / speed) + (uint32_t)(i * period / n)) % (uint32_t)period) + minX - kCloudW;
+        cloudAt(c, x, (i % 2) ? 1 : 0);
+    }
+}
+
+// Falling particles over the whole width below the clouds (rows 4..7).
+void precipitation(WideCanvas& c, int every, int slow, uint32_t frame, bool streak, bool drift) {
+    for (int x = 2 + (int)(frame / 40 % 2); x < kWideW; x += every) {
+        const int phase = (x * 7) % 4;
+        const int y = 4 + (int)(((frame / slow) + phase) % 4);
+        const int xx = drift ? x + (int)(((frame / slow) / 2 + x) % 2) : x;
+        c.set(xx, y);
+        if (streak && y > 4) c.set(xx, y - 1);
+    }
+}
+
+}  // namespace
+
+// Rolling hills along the bottom (rows 6..7) over the whole width: the scene is never empty.
+static void hills(WideCanvas& c) {
+    for (int x = 0; x < kWideW; x++) {
+        c.set(x, 7);
+        if ((x % 23) > 6 && (x % 23) < 16) c.set(x, 6);
+    }
+}
+
+void drawWeatherWide(WideCanvas& c, WxKind kind, bool day, uint32_t frame) {
+    c.clear();
+    switch (kind) {
+        case WxKind::Clear:
+            if (day) {
+                sunAt(c, 4, 1, frame);
+                hills(c);
+                // birds gliding across the sky
+                for (int i = 0; i < 2; i++) {
+                    const int x = 14 + (int)(((frame / 3) + i * 29) % 58);
+                    const int y = 1 + i * 2;
+                    c.set(x, y + 1); c.set(x + 1, y); c.set(x + 2, y + 1); c.set(x + 3, y); c.set(x + 4, y + 1);
+                }
+            } else {
+                // moon and twinkling stars
+                Canvas m;
+                drawMoon(m, 0, 0.18);
+                for (int x = 0; x < 8; x++) c.col[2 + x] = m.col[x];
+                static const int stars[][2] = {{14, 1}, {21, 5}, {27, 2}, {33, 6}, {38, 1}, {45, 4}, {51, 2}, {57, 6}, {62, 3}, {68, 1}};
+                for (int i = 0; i < 10; i++)
+                    if (((frame / 4) + i * 3) % 7 != 0) c.set(stars[i][0], stars[i][1] > 5 ? 5 : stars[i][1]);
+                hills(c);
+            }
+            break;
+        case WxKind::PartlyCloudy:
+            if (day) sunAt(c, 4, 1, frame);
+            else { Canvas m; drawMoon(m, 0, 0.18); for (int x = 0; x < 8; x++) c.col[2 + x] = m.col[x]; }
+            driftingClouds(c, 3, frame, 12);
+            hills(c);
+            break;
+        case WxKind::Cloudy:
+            driftingClouds(c, 5, frame, 0);
+            break;
+        case WxKind::Fog:
+            for (int r = 1; r < 8; r += 2) {
+                const int shift = (int)((frame / 3) % 8);
+                const int s = (r % 4 == 1) ? shift : 7 - shift;
+                for (int x = 0; x < kWideW; x++)
+                    if (((x + s) % 8) < 5) c.set(x, r);
+            }
+            break;
+        case WxKind::Drizzle:
+            driftingClouds(c, 4, frame, 0);
+            precipitation(c, 9, 3, frame, false, false);
+            break;
+        case WxKind::Rain:
+            driftingClouds(c, 5, frame, 0);
+            precipitation(c, 4, 1, frame, true, false);
+            break;
+        case WxKind::Showers:
+            driftingClouds(c, 3, frame, 0);
+            precipitation(c, 6, 1, frame, false, false);
+            break;
+        case WxKind::Snow:
+            driftingClouds(c, 4, frame, 0);
+            precipitation(c, 6, 3, frame, false, true);
+            break;
+        case WxKind::Thunder: {
+            driftingClouds(c, 5, frame, 0);
+            precipitation(c, 5, 1, frame, false, false);
+            // a bolt now and then at changing places (no flashing of the whole display)
+            const uint32_t cycle = frame / 24;
+            if (frame % 24 < 4) {
+                const int x = 8 + (int)((cycle * 23) % 56);
+                c.set(x + 2, 3); c.set(x + 1, 4); c.set(x + 2, 4); c.set(x, 5); c.set(x + 1, 5); c.set(x, 6); c.set(x - 1, 7);
+            }
+            break;
+        }
+        default: {                                              // no data: a dot runs back and forth
+            const int p = (int)(frame % 140);
+            c.set(p < 70 ? p + 1 : 140 - p, 3);
+            hills(c);
+            break;
+        }
+    }
+}
+
 void dump(const Canvas& c, char* out, int cap) {
     int n = 0;
     for (int y = 0; y < kFieldH && n + kFieldW + 2 < cap; y++) {

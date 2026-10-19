@@ -1,6 +1,7 @@
 #include "data_store.h"
 #include <ArcCore.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include <WiFi.h>
 #include "clock_config.h"
 #include "core/civil.h"
@@ -281,7 +282,38 @@ bool fetchTodo(Print* log) {
 
 void feedString(const uint8_t* d, size_t n, void* c) { ((String*)c)->concat((const char*)d, n); }
 
+// ── automatic place from the public IP ───────────────────────────────────
+// ip-api.com: free, no key, city-level accuracy (good enough for the weather). Only HTTP in the free tier;
+// nothing secret is sent. Once per start (the provider may move the IP), and again after `loc auto`.
+volatile bool s_located = false;
+
+void locateByIp(Print* log) {
+    if (s_located || !clockcfg::copy().locAuto) return;
+    clockhttp::Request req;
+    req.url = "http://ip-api.com/json/?fields=status,message,lat,lon,city";
+    req.timeoutMs = 8000;
+    String body;
+    const clockhttp::Result r = clockhttp::perform(req, feedString, &body);
+    JsonDocument doc;
+    if (r.status != 200 || deserializeJson(doc, body) || strcmp(doc["status"] | "", "success") != 0) {
+        Serial.printf("[LOC] Standort aus der IP nicht ermittelt (%s) - bleibt bei %s\n",
+                      r.status != 200 ? statusText(r.status, r.error) : (const char*)(doc["message"] | "Antwort nicht lesbar"),
+                      clockcfg::copy().place.c_str());
+        return;                                  // next weather fetch tries again
+    }
+    s_located = true;
+    ClockConfig& c = clockcfg::get();
+    if (!c.locAuto) return;                      // set by hand meanwhile
+    c.lat = doc["lat"] | c.lat;
+    c.lon = doc["lon"] | c.lon;
+    c.place = (const char*)(doc["city"] | c.place.c_str());
+    clockcfg::save();
+    Serial.printf("[LOC] Standort aus der IP: %s (%.3f, %.3f)\n", c.place.c_str(), c.lat, c.lon);
+    if (log && log != &Serial) log->printf("Standort: %s\n", c.place.c_str());
+}
+
 bool fetchWeather(Print* log) {
+    locateByIp(log);
     const ClockConfig cfg = clockcfg::copy();
     clockhttp::Request req;
     char url[480];
@@ -392,6 +424,8 @@ void unlock() { xSemaphoreGive(s_mtx); }
 const Data& data() { return s_data; }
 
 void request(Source s) { s_requestMask |= (1u << s); }
+
+void relocate() { s_located = false; }
 
 void requestAll() {
     for (int i = 0; i < SRC_COUNT; i++) s_attemptsAtRequest[i] = s_attempts[i];

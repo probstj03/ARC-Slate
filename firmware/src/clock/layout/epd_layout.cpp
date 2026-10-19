@@ -1,18 +1,24 @@
 #include "epd_layout.h"
-#include <Fonts/FreeSans12pt7b.h>
-#include <Fonts/FreeSans9pt7b.h>
-#include <Fonts/FreeSansBold12pt7b.h>
-#include <Fonts/FreeSansBold18pt7b.h>
-#include <Fonts/FreeSansBold24pt7b.h>
-#include <Fonts/FreeSansBold9pt7b.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
+#include "../assets/logo_jp.h"
 #include "../core/civil.h"
 #include "../core/moon.h"
+#include "../fonts/Lato10pt.h"
+#include "../fonts/Lato12pt.h"
+#include "../fonts/LatoBold12pt.h"
+#include "../fonts/LatoBold16pt.h"
+#include "../fonts/LatoBold20pt.h"
+#include "../fonts/LatoBold28pt.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+// Only content that changes at most once a day (or when the calendar / to-do list really changes) is drawn here:
+// epd_clock.cpp redraws the panel only when the picture differs. Everything current (time, current weather,
+// reminders) is on the LED matrices. Texts from the calendar / to-do are Latin-1 (umlauts as one byte, core/fold.h).
 
 namespace epdlayout {
 
@@ -20,42 +26,41 @@ namespace {
 
 constexpr uint16_t kBlack = 0x0000, kWhite = 0xFFFF;
 
-constexpr int HEADER_H = 76;
-constexpr int WX_Y = 80, WX_H = 100;
-constexpr int BODY_Y = 186, BODY_BOTTOM = 440;
-constexpr int SEP_X = 478;
-constexpr int FOOTER_Y = 446;
+constexpr int HEADER_H = 96;
+constexpr int WX_Y = 100, WX_H = 96;
+constexpr int BODY_Y = 206, BODY_BOTTOM = 476;
+constexpr int SEP_X = 440;
+constexpr int BAR_H = 32;                 // black heading bars
+constexpr int ROW_H = 30;
+
+const GFXfont* const F_SMALL = &Lato10pt;
+const GFXfont* const F_TEXT = &Lato12pt;
+const GFXfont* const F_TEXT_B = &LatoBold12pt;
+const GFXfont* const F_HEAD = &LatoBold16pt;
+const GFXfont* const F_BIG = &LatoBold20pt;
+const GFXfont* const F_HUGE = &LatoBold28pt;
 
 Adafruit_GFX* G = nullptr;
 const clockdata::Data* S = nullptr;
 Options opt;
 
-// ── text helpers (GFX fonts) ─────────────────────────────────────────────
+// ── text helpers ─────────────────────────────────────────────────────────
 
-void printAt(int x, int y, const GFXfont* font, const String& text) {
+void printAt(int x, int y, const GFXfont* font, const char* text) {
     G->setFont(font);
     G->setCursor(x, y);
     G->print(text);
 }
 
-int textWidth(const GFXfont* font, const String& text) {
+int textWidth(const GFXfont* font, const char* text) {
     int16_t bx, by;
     uint16_t bw, bh;
     G->setFont(font);
     G->getTextBounds(text, 0, 0, &bx, &by, &bw, &bh);
-    return (int)bw;
+    return (int)bw + (bx > 0 ? bx : 0);
 }
 
-void printCentered(int cx, int y, const GFXfont* font, const String& text) {
-    int16_t bx, by;
-    uint16_t bw, bh;
-    G->setFont(font);
-    G->getTextBounds(text, 0, 0, &bx, &by, &bw, &bh);
-    G->setCursor(cx - (int)bw / 2 - bx, y);
-    G->print(text);
-}
-
-void printRight(int xRight, int y, const GFXfont* font, const String& text) {
+void printRight(int xRight, int y, const GFXfont* font, const char* text) {
     int16_t bx, by;
     uint16_t bw, bh;
     G->setFont(font);
@@ -64,42 +69,59 @@ void printRight(int xRight, int y, const GFXfont* font, const String& text) {
     G->print(text);
 }
 
-String fit(const GFXfont* font, String text, int maxW) {
-    if (textWidth(font, text) <= maxW) return text;
-    while (text.length() > 1 && textWidth(font, text + "...") > maxW) text.remove(text.length() - 1);
-    text.trim();
-    return text + "...";
-}
-
-void degree(int x, int y, int r = 3) { G->drawCircle(x, y, r, kBlack); }
-
-// "-3" + degree ring; returns the x after the ring
-int printTemp(int x, int y, const GFXfont* font, int t10) {
-    char buf[12];
-    snprintf(buf, sizeof(buf), "%d", (int)lroundf(t10 / 10.0f));
+// Shortens `text` with "..." until it fits into maxW pixels.
+void printFit(int x, int y, const GFXfont* font, const char* text, int maxW) {
+    char buf[96];
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = 0;
+    if (textWidth(font, buf) > maxW) {
+        size_t n = strlen(buf);
+        while (n > 1) {
+            buf[--n] = 0;
+            while (n > 0 && buf[n - 1] == ' ') buf[--n] = 0;
+            char t[100];
+            snprintf(t, sizeof(t), "%s...", buf);
+            if (textWidth(font, t) <= maxW) { strcpy(buf, t); break; }
+        }
+    }
     printAt(x, y, font, buf);
-    const int w = textWidth(font, buf);
-    degree(x + w + 6, y - (font == &FreeSansBold24pt7b ? 26 : font == &FreeSansBold18pt7b ? 20 : 12), font == &FreeSansBold24pt7b ? 5 : 3);
-    return x + w + 16;
 }
+
+void headingBar(int x, int y, int w, const char* title) {
+    G->fillRect(x, y, w, BAR_H, kBlack);
+    G->setTextColor(kWhite);
+    printAt(x + 10, y + 25, F_HEAD, title);
+    G->setTextColor(kBlack);
+}
+
+void thickLine(int y) { G->fillRect(0, y, epdlayout::W, 4, kBlack); }
 
 // ── icons ────────────────────────────────────────────────────────────────
 
+// A line with round caps, `t` pixels thick.
+void thickStroke(int x0, int y0, int x1, int y1, int t) {
+    const int steps = max(abs(x1 - x0), abs(y1 - y0));
+    for (int i = 0; i <= steps; i++) {
+        const int x = x0 + (x1 - x0) * i / (steps ? steps : 1), y = y0 + (y1 - y0) * i / (steps ? steps : 1);
+        G->fillCircle(x, y, t / 2, kBlack);
+    }
+}
+
+// Sun: solid disc, a white gap, 8 short rays with round ends.
 void drawSun(int cx, int cy, int r) {
     G->fillCircle(cx, cy, r, kBlack);
+    const int r0 = r + r / 2 + 2, r1 = r * 2 + 4;
     for (int i = 0; i < 8; i++) {
         const float a = i * (float)M_PI / 4.0f;
-        const int x1 = cx + (int)lroundf(cosf(a) * (r + 5)), y1 = cy + (int)lroundf(sinf(a) * (r + 5));
-        const int x2 = cx + (int)lroundf(cosf(a) * (r + 12)), y2 = cy + (int)lroundf(sinf(a) * (r + 12));
-        G->drawLine(x1, y1, x2, y2, kBlack);
-        G->drawLine(x1 + 1, y1, x2 + 1, y2, kBlack);
+        thickStroke(cx + (int)lroundf(cosf(a) * r0), cy + (int)lroundf(sinf(a) * r0), cx + (int)lroundf(cosf(a) * r1),
+                    cy + (int)lroundf(sinf(a) * r1), r >= 12 ? 5 : 4);
     }
 }
 
 void drawMoonIcon(int cx, int cy, int r, double phaseFrac) {
     const double k = cos(2.0 * M_PI * phaseFrac);      // 1 new, -1 full
     const bool waxing = phaseFrac < 0.5;
-    G->drawCircle(cx, cy, r, kBlack);
+    for (int d = 0; d < 3; d++) G->drawCircle(cx, cy, r - d, kBlack);
     for (int y = -r + 1; y < r; y++) {
         const double hw = sqrt((double)r * r - (double)y * y);
         int x0, x1;
@@ -109,216 +131,153 @@ void drawMoonIcon(int cx, int cy, int r, double phaseFrac) {
     }
 }
 
-void drawCloud(int ox, int oy, int s /*size 64 box*/, bool outlineWhite = false) {
+void drawCloud(int ox, int oy, int s, bool outlineWhite = false) {
     auto shape = [&](uint16_t color, int grow) {
         G->fillCircle(ox + s * 22 / 64, oy + s * 38 / 64, s * 11 / 64 + grow, color);
         G->fillCircle(ox + s * 36 / 64, oy + s * 30 / 64, s * 15 / 64 + grow, color);
         G->fillCircle(ox + s * 50 / 64, oy + s * 39 / 64, s * 10 / 64 + grow, color);
         G->fillRoundRect(ox + s * 12 / 64 - grow, oy + s * 38 / 64 - grow, s * 46 / 64 + 2 * grow, s * 14 / 64 + 2 * grow, s * 7 / 64, color);
     };
-    if (outlineWhite) shape(kWhite, 3);
+    if (outlineWhite) shape(kWhite, 4);
     shape(kBlack, 0);
 }
 
-void drawWeatherIcon(int ox, int oy, ac::WxKind kind, bool day) {       // within a 64x64 box
+void drawWeatherIcon(int ox, int oy, ac::WxKind kind) {       // within a 72x72 box, day symbols
     switch (kind) {
         case ac::WxKind::Clear:
-            if (day) drawSun(ox + 32, oy + 32, 14);
-            else { G->fillCircle(ox + 30, oy + 32, 17, kBlack); G->fillCircle(ox + 40, oy + 26, 15, kWhite); }
+            drawSun(ox + 36, oy + 36, 14);
             break;
         case ac::WxKind::PartlyCloudy:
-            if (day) drawSun(ox + 22, oy + 22, 9);
-            else { G->fillCircle(ox + 20, oy + 22, 12, kBlack); G->fillCircle(ox + 27, oy + 17, 10, kWhite); }
-            drawCloud(ox + 4, oy + 8, 60, true);
+            drawSun(ox + 26, oy + 26, 10);
+            drawCloud(ox + 8, oy + 16, 64, true);
             break;
         case ac::WxKind::Cloudy:
-            drawCloud(ox, oy, 64);
+            drawCloud(ox, oy + 2, 72);
             break;
         case ac::WxKind::Fog:
-            for (int i = 0; i < 4; i++) G->fillRoundRect(ox + 6 + (i % 2) * 8, oy + 14 + i * 11, 44, 4, 2, kBlack);
+            for (int i = 0; i < 4; i++) G->fillRoundRect(ox + 6 + (i % 2) * 10, oy + 16 + i * 13, 52, 6, 3, kBlack);
             break;
         case ac::WxKind::Drizzle:
-            drawCloud(ox, oy - 6, 64);
-            for (int i = 0; i < 4; i++) G->fillCircle(ox + 16 + i * 11, oy + 46 + (i % 2) * 6, 2, kBlack);
+            drawCloud(ox, oy - 6, 72);
+            for (int i = 0; i < 4; i++) G->fillCircle(ox + 18 + i * 12, oy + 54 + (i % 2) * 7, 3, kBlack);
             break;
         case ac::WxKind::Rain:
         case ac::WxKind::Showers:
-            drawCloud(ox, oy - 6, 64);
+            drawCloud(ox, oy - 6, 72);
             for (int i = 0; i < 4; i++) {
-                const int x = ox + 16 + i * 11, y = oy + 44 + (i % 2) * 5;
-                G->drawLine(x, y, x - 4, y + 11, kBlack);
-                G->drawLine(x + 1, y, x - 3, y + 11, kBlack);
+                const int x = ox + 18 + i * 12, y = oy + 50 + (i % 2) * 6;
+                thickStroke(x, y, x - 4, y + 12, 3);
             }
             break;
         case ac::WxKind::Snow:
-            drawCloud(ox, oy - 6, 64);
+            drawCloud(ox, oy - 6, 72);
             for (int i = 0; i < 3; i++) {
-                const int x = ox + 18 + i * 14, y = oy + 52 + (i % 2) * 4;
-                G->drawLine(x - 4, y, x + 4, y, kBlack);
-                G->drawLine(x, y - 4, x, y + 4, kBlack);
-                G->drawLine(x - 3, y - 3, x + 3, y + 3, kBlack);
-                G->drawLine(x - 3, y + 3, x + 3, y - 3, kBlack);
+                const int x = ox + 20 + i * 16, y = oy + 60 + (i % 2) * 5;
+                thickStroke(x - 5, y, x + 5, y, 3);
+                thickStroke(x, y - 5, x, y + 5, 3);
             }
             break;
         case ac::WxKind::Thunder:
-            drawCloud(ox, oy - 8, 64);
-            G->fillTriangle(ox + 34, oy + 40, ox + 22, oy + 58, ox + 32, oy + 56, kBlack);
-            G->fillTriangle(ox + 30, oy + 54, ox + 40, oy + 42, ox + 28, oy + 63, kBlack);
+            drawCloud(ox, oy - 8, 72);
+            G->fillTriangle(ox + 38, oy + 44, ox + 24, oy + 64, ox + 36, oy + 62, kBlack);
+            G->fillTriangle(ox + 34, oy + 60, ox + 46, oy + 46, ox + 30, oy + 71, kBlack);
             break;
         default:
-            printCentered(ox + 32, oy + 48, &FreeSansBold24pt7b, "?");
             break;
     }
 }
 
-void drawSmallSun(int x, int y, bool rise) {         // 22x14 horizon icon with an arrow
-    G->drawFastHLine(x, y + 12, 22, kBlack);
-    G->fillCircle(x + 8, y + 12, 6, kBlack);
-    G->fillRect(x, y + 13, 22, 3, kWhite);
-    if (rise) { G->fillTriangle(x + 19, y, x + 15, y + 6, x + 23, y + 6, kBlack); }
-    else { G->fillTriangle(x + 19, y + 7, x + 15, y + 1, x + 23, y + 1, kBlack); }
-}
-
-// ── header ───────────────────────────────────────────────────────────────
+// ── header: logo, date, week, moon ───────────────────────────────────────
 
 void drawHeader(int64_t now) {
+    G->drawBitmap(10, (HEADER_H - LOGO_JP_H) / 2, logo_jp, LOGO_JP_W, LOGO_JP_H, kBlack);
+
     const ac::Civil c = ac::fromSec(now);
     const int wd = ac::weekday(ac::daysOf(now));
     char date[48];
-    snprintf(date, sizeof(date), "%s, %d %s %d", ac::weekdayName(wd, false), c.day, ac::monthName(c.month, false), c.year);
-    const GFXfont* fonts[] = {&FreeSansBold24pt7b, &FreeSansBold18pt7b, &FreeSansBold12pt7b};
-    const GFXfont* f = fonts[2];
-    for (const GFXfont* cand : fonts) if (textWidth(cand, date) <= 510) { f = cand; break; }
-    printAt(10, f == &FreeSansBold24pt7b ? 50 : f == &FreeSansBold18pt7b ? 46 : 40, f, date);
+    snprintf(date, sizeof(date), "%s, %s %d", ac::weekdayName(wd, false), ac::monthName(c.month, false), c.day);
+    const int tx = 10 + LOGO_JP_W + 22;
+    const GFXfont* f = textWidth(F_HUGE, date) <= 560 - tx ? F_HUGE : F_BIG;
+    printAt(tx, 52, f, date);
     char week[16];
-    snprintf(week, sizeof(week), "Wk %d", ac::isoWeek(c.year, c.month, c.day));
-    printAt(12, 69, &FreeSans9pt7b, week);
+    snprintf(week, sizeof(week), "Week %d", ac::isoWeek(c.year, c.month, c.day));
+    printAt(tx, 82, F_TEXT, week);
 
-    // moon block on the right: disc, phase name, illumination and the next full / new moon
     const ac::MoonInfo m = ac::moonAt(ac::localToUtc(now));
-    const int mx = 570;
-    drawMoonIcon(mx, 38, 24, m.age / ac::kSynodicMonth);
-    const int tx = mx + 36, tw = W - 10 - tx;
-    printAt(tx, 32, &FreeSansBold12pt7b, fit(&FreeSansBold12pt7b, ac::moonPhaseName(m.phase), tw));
+    const int mx = 572;
+    drawMoonIcon(mx, 48, 24, m.age / ac::kSynodicMonth);
+    const int px = mx + 36, pw = W - 8 - px;
+    printFit(px, 44, F_TEXT_B, ac::moonPhaseName(m.phase), pw);
     const int64_t nextFull = ac::nextMoonEvent(ac::localToUtc(now), true);
     const int64_t nextNew = ac::nextMoonEvent(ac::localToUtc(now), false);
     const bool fullFirst = nextFull < nextNew;
     const int days = (int)((((fullFirst ? nextFull : nextNew) - ac::localToUtc(now)) + 43200) / 86400);
     char moon[48];
-    snprintf(moon, sizeof(moon), "%d %%  %s in %d d", (int)lroundf(m.illum * 100.0), fullFirst ? "Full moon" : "New moon", days);
-    printAt(tx, 56, &FreeSans9pt7b, fit(&FreeSans9pt7b, moon, tw));
-    G->fillRect(0, HEADER_H - 2, W, 3, kBlack);
+    if (days <= 0) snprintf(moon, sizeof(moon), "%s today", fullFirst ? "Full moon" : "New moon");
+    else snprintf(moon, sizeof(moon), "%s in %d day%s", fullFirst ? "Full moon" : "New moon", days, days == 1 ? "" : "s");
+    printFit(px, 72, F_SMALL, moon, pw);
+    thickLine(HEADER_H);
 }
 
-// ── weather band ─────────────────────────────────────────────────────────
+// ── weather: forecast of today (snapshot of the morning refresh) and the place ──
+
+void tempText(char* out, size_t cap, int t10) { snprintf(out, cap, "%d\xB0", (int)lroundf(t10 / 10.0f)); }
 
 void drawWeatherBand(int64_t now) {
     const ac::Weather& w = S->weather;
+    // place on the right, always
+    if (opt.place && opt.place[0]) printRight(W - 12, WX_Y + 34, F_HEAD, opt.place);
     if (!w.valid) {
-        printAt(14, WX_Y + 56, &FreeSans12pt7b, "No weather data - fetch failed or not done yet");
-        G->fillRect(0, WX_Y + WX_H, W, 2, kBlack);
+        printAt(14, WX_Y + 42, F_TEXT_B, "No weather data");
+        const char* err = S->src[clockdata::SRC_WEATHER].error;
+        printFit(14, WX_Y + 72, F_SMALL, err[0] ? err : "not fetched yet", 420);
+        thickLine(WX_Y + WX_H);
         return;
     }
     const int di = (int)((ac::dayStart(now) - w.day0) / 86400);
     const ac::DayInfo day = (di >= 0 && di < 3) ? w.day[di] : ac::DayInfo();
+    const ac::WxKind kind = ac::kindFromWmo(day.wmo);
 
-    // current conditions (as of the fetch, i.e. the morning refresh)
-    drawWeatherIcon(10, WX_Y + 8, ac::kindFromWmo(w.wmo), w.isDay);
-    printTemp(86, WX_Y + 50, &FreeSansBold24pt7b, w.temp10);
-    printAt(86, WX_Y + 70, &FreeSans9pt7b, ac::kindName(ac::kindFromWmo(w.wmo)));
-    char line[64];
-    snprintf(line, sizeof(line), "%d / %d   Rain %u %%", (int)lroundf(day.tMin10 / 10.0f), (int)lroundf(day.tMax10 / 10.0f), day.popMax);
-    printAt(86, WX_Y + 87, &FreeSans9pt7b, fit(&FreeSans9pt7b, line, 170));
+    drawWeatherIcon(12, WX_Y + 12, kind);
+    char hi[12], lo[12], line[64];
+    tempText(hi, sizeof(hi), day.tMax10);
+    tempText(lo, sizeof(lo), day.tMin10);
+    printAt(104, WX_Y + 50, F_HUGE, hi);
+    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 50, F_BIG, lo);
+    snprintf(line, sizeof(line), "%s, rain %u %%", ac::kindName(kind), day.popMax);
+    printFit(104, WX_Y + 82, F_TEXT, line, 330);
 
-    // sunrise / sunset
-    const int sx = 262;
-    drawSmallSun(sx, WX_Y + 8, true);
-    drawSmallSun(sx, WX_Y + 44, false);
-    const ac::Civil sr = ac::fromSec(day.sunrise), ss = ac::fromSec(day.sunset);
-    char t[12];
-    snprintf(t, sizeof(t), "%02d:%02d", sr.hour, sr.minute);
-    printAt(sx + 34, WX_Y + 27, &FreeSansBold18pt7b, day.sunrise ? t : "--:--");
-    snprintf(t, sizeof(t), "%02d:%02d", ss.hour, ss.minute);
-    printAt(sx + 34, WX_Y + 63, &FreeSansBold18pt7b, day.sunset ? t : "--:--");
-    if (day.sunrise && day.sunset > day.sunrise) {
-        const int len = (int)((day.sunset - day.sunrise) / 60);
-        snprintf(line, sizeof(line), "Daylight %d h %02d min", len / 60, len % 60);
-        printAt(sx, WX_Y + 87, &FreeSans9pt7b, line);
+    if (day.sunrise && day.sunset) {
+        const ac::Civil sr = ac::fromSec(day.sunrise), ss = ac::fromSec(day.sunset);
+        snprintf(line, sizeof(line), "Sunrise %02d:%02d   Sunset %02d:%02d", sr.hour, sr.minute, ss.hour, ss.minute);
+        printRight(W - 12, WX_Y + 72, F_TEXT, line);
     }
-
-    // hourly graph 06..22 of today: temperature line, rain bars
-    const int gx = 505, gy = WX_Y + 8, gw = 280, gh = 66;
-    const int h0 = 6, h1 = 22;
-    int tMin = 1000, tMax = -1000;
-    for (int h = h0; h <= h1; h++) {
-        const int idx = di * 24 + h;
-        if (idx < 0 || idx >= ac::kHours) continue;
-        tMin = min(tMin, (int)w.hTemp10[idx]);
-        tMax = max(tMax, (int)w.hTemp10[idx]);
-    }
-    if (tMax >= tMin) {
-        if (tMax - tMin < 40) { tMax += 20; tMin -= 20; }
-        auto px = [&](int h) { return gx + (h - h0) * gw / (h1 - h0); };
-        auto py = [&](int t10) { return gy + gh - (t10 - tMin) * gh / (tMax - tMin); };
-        G->drawFastHLine(gx, gy + gh + 2, gw, kBlack);
-        for (int h = h0; h <= h1; h += 4) {
-            G->drawFastVLine(px(h), gy + gh + 2, 5, kBlack);
-            char hb[4];
-            snprintf(hb, sizeof(hb), "%d", h);
-            printCentered(px(h), gy + gh + 20, &FreeSans9pt7b, hb);
-        }
-        for (int h = h0; h < h1; h++) {                        // rain probability as bars at the bottom
-            const int idx = di * 24 + h;
-            if (idx < 0 || idx >= ac::kHours) continue;
-            const int bar = w.hPop[idx] * 22 / 100;
-            if (bar > 0) G->fillRect(px(h) + 1, gy + gh - bar, max(2, gw / (h1 - h0) - 2), bar, kBlack);
-        }
-        int prevX = 0, prevY = 0;
-        for (int h = h0; h <= h1; h++) {
-            const int idx = di * 24 + h;
-            if (idx < 0 || idx >= ac::kHours) continue;
-            const int xx = px(h), yy = py(w.hTemp10[idx]);
-            if (h > h0) { G->drawLine(prevX, prevY, xx, yy, kBlack); G->drawLine(prevX, prevY - 1, xx, yy - 1, kBlack); }
-            prevX = xx; prevY = yy;
-        }
-        // min / max labels
-        char lb[8];
-        snprintf(lb, sizeof(lb), "%d", (int)lroundf(tMax / 10.0f));
-        printAt(gx - 34, gy + 10, &FreeSans9pt7b, lb);
-        snprintf(lb, sizeof(lb), "%d", (int)lroundf(tMin / 10.0f));
-        printAt(gx - 34, gy + gh, &FreeSans9pt7b, lb);
-        // sun markers on the time axis
-        auto marker = [&](int64_t sec) {
-            if (!sec) return;
-            const ac::Civil c = ac::fromSec(sec);
-            const float hf = c.hour + c.minute / 60.0f;
-            if (hf < h0 || hf > h1) return;
-            const int xx = gx + (int)((hf - h0) * gw / (h1 - h0));
-            G->fillTriangle(xx, gy + gh - 1, xx - 4, gy + gh + 7, xx + 4, gy + gh + 7, kBlack);
-        };
-        marker(day.sunrise);
-        marker(day.sunset);
-    }
-    G->fillRect(0, WX_Y + WX_H, W, 2, kBlack);
+    thickLine(WX_Y + WX_H);
 }
 
-// ── calendar ─────────────────────────────────────────────────────────────
+// ── calendar: today and the next days with events ───────────────────────
+
+void dayLabel(int64_t ds, int64_t today, char* out, size_t cap) {
+    const ac::Civil c = ac::fromSec(ds);
+    const int wd = ac::weekday(ac::daysOf(ds));
+    if (ds == today) snprintf(out, cap, "Today");
+    else if (ds == today + 86400) snprintf(out, cap, "Tomorrow");
+    else snprintf(out, cap, "%s %d %s", ac::weekdayName(wd, false), c.day, ac::monthName(c.month, true));
+}
 
 void drawCalendar(int64_t now) {
     const ac::Agenda& a = S->agenda;
     const int64_t today = ac::dayStart(now);
-    G->fillRect(0, BODY_Y - 2, SEP_X - 8, 24, kBlack);
-    G->setTextColor(kWhite);
-    printAt(10, BODY_Y + 16, &FreeSansBold12pt7b, "EVENTS");
-    G->setTextColor(kBlack);
+    const int x1 = SEP_X - 14;
+    headingBar(0, BODY_Y, SEP_X - 8, "EVENTS");
     if (!S->src[clockdata::SRC_CALENDAR].ok) {
-        printAt(10, BODY_Y + 54, &FreeSans12pt7b, "Calendar unavailable");
-        printAt(10, BODY_Y + 78, &FreeSans9pt7b, fit(&FreeSans9pt7b, S->src[clockdata::SRC_CALENDAR].error[0] ? S->src[clockdata::SRC_CALENDAR].error : "not fetched yet", SEP_X - 30));
+        printAt(12, BODY_Y + BAR_H + 34, F_TEXT_B, "Calendar unavailable");
+        const char* err = S->src[clockdata::SRC_CALENDAR].error;
+        printFit(12, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", x1 - 12);
         return;
     }
-    int y = BODY_Y + 26;
-    int shown = 0, hidden = 0;
-    bool anyToday = false;
+    int y = BODY_Y + BAR_H + 8;
+    bool hidden = false;
     for (int day = 0; day < 7; day++) {
         const int64_t ds = today + (int64_t)day * 86400;
         int idx[ac::kMaxEvents];
@@ -327,123 +286,67 @@ void drawCalendar(int64_t now) {
             const int64_t end = a.ev[i].end > a.ev[i].start ? a.ev[i].end : a.ev[i].start + 1;
             if (a.ev[i].start < ds + 86400 && end > ds && n < ac::kMaxEvents) idx[n++] = i;
         }
-        if (day == 0) anyToday = n > 0;
         if (n == 0 && day != 0) continue;
-        const int need = 22 + (n ? n : 1) * 24;
-        if (y + need > BODY_BOTTOM) {
-            for (int j = day; j < 7; j++) hidden += a.countOnDay(today + (int64_t)j * 86400) > 0 ? 1 : 0;
-            break;
-        }
-        // day header
-        char label[32];
-        ac::dayLabel(ds, today, label, sizeof(label));
-        const ac::Civil c = ac::fromSec(ds);
-        char full[48];
-        if (day <= 1) snprintf(full, sizeof(full), "%s  %s %d.%d.", label, ac::weekdayName(ac::weekday(ac::daysOf(ds)), true), c.day, c.month);
-        else snprintf(full, sizeof(full), "%s", label);
-        G->drawFastHLine(8, y, SEP_X - 24, kBlack);
-        printAt(10, y + 18, day == 0 ? &FreeSansBold12pt7b : &FreeSansBold9pt7b, full);
-        y += 24;
+        if (y + ROW_H * 2 > BODY_BOTTOM) { hidden = true; break; }
+        char label[40];
+        dayLabel(ds, today, label, sizeof(label));
+        printAt(12, y + 22, F_TEXT_B, label);
+        y += ROW_H;
         if (n == 0) {
-            printAt(24, y + 14, &FreeSans9pt7b, "no events");
-            y += 24;
+            printAt(84, y + 22, F_TEXT, "No events");
+            y += ROW_H + 8;
             continue;
         }
         for (int k = 0; k < n; k++) {
+            if (y + ROW_H > BODY_BOTTOM) { hidden = true; break; }
             const ac::Event& e = a.ev[idx[k]];
-            char tl[24];
-            if (e.allDay) snprintf(tl, sizeof(tl), "all day");
-            else {
-                const ac::Civil s = ac::fromSec(max(e.start, ds));
+            if (!e.allDay && e.start >= ds) {
+                const ac::Civil s = ac::fromSec(e.start);
+                char tl[8];
                 snprintf(tl, sizeof(tl), "%02d:%02d", s.hour, s.minute);
+                printAt(12, y + 22, F_TEXT, tl);
             }
-            printAt(14, y + 16, &FreeSansBold9pt7b, tl);
-            String title = e.summary;
-            if (e.location[0]) title += String("  @ ") + e.location;
-            printAt(104, y + 17, &FreeSans12pt7b, fit(&FreeSans12pt7b, title, SEP_X - 8 - 112));
-            y += 24;
-            shown++;
+            printFit(84, y + 22, F_TEXT, e.summary, x1 - 84);
+            y += ROW_H;
         }
+        if (hidden) break;
+        y += 8;
     }
-    (void)anyToday;
-    if (hidden > 0) {
-        printRight(SEP_X - 14, BODY_BOTTOM + 2, &FreeSans9pt7b, String("+ more days"));
-    }
-    (void)shown;
+    if (hidden) printRight(x1, BODY_BOTTOM + 2, F_SMALL, "more ...");
 }
 
 // ── to-do ────────────────────────────────────────────────────────────────
 
 void drawTodo(int64_t now) {
-    const int x0 = SEP_X + 10;
-    const int x1 = W - 8;
+    const int x0 = SEP_X + 14, x1 = W - 12;
     const int64_t today = ac::dayStart(now);
-    G->fillRect(SEP_X, BODY_Y - 2, W - SEP_X, 24, kBlack);
-    G->setTextColor(kWhite);
-    printAt(x0, BODY_Y + 16, &FreeSansBold12pt7b, "TO-DO");
-    G->setTextColor(kBlack);
-    G->drawFastVLine(SEP_X - 4, BODY_Y - 2, BODY_BOTTOM - BODY_Y + 4, kBlack);
+    headingBar(SEP_X, BODY_Y, W - SEP_X, "TO-DO");
     if (!S->src[clockdata::SRC_TODO].ok) {
-        printAt(x0, BODY_Y + 54, &FreeSans9pt7b, "To-do unavailable");
+        printAt(x0, BODY_Y + BAR_H + 34, F_TEXT_B, "To-do unavailable");
         const char* err = S->src[clockdata::SRC_TODO].error;
-        printAt(x0, BODY_Y + 76, &FreeSans9pt7b, fit(&FreeSans9pt7b, err[0] ? err : "not fetched yet", x1 - x0));
+        printFit(x0, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", x1 - x0);
         return;
     }
-    int y = BODY_Y + 28;
+    int y = BODY_Y + BAR_H + 8;
     int shown = 0;
     for (int i = 0; i < S->taskCount; i++) {
-        if (y + 26 > BODY_BOTTOM) break;
+        if (y + ROW_H > BODY_BOTTOM - (i + 1 < S->taskCount ? 20 : 0)) break;
         const ac::Task& t = S->tasks[i];
-        char tag[16] = "";
-        if (t.hasDate) {
-            const ac::Civil c = ac::fromSec(t.date);
-            if (t.date < today) snprintf(tag, sizeof(tag), "!%d.%d.", c.day, c.month);
-            else if (t.date == today) snprintf(tag, sizeof(tag), "today");
-            else if (t.date == today + 86400) snprintf(tag, sizeof(tag), "tomorrow");
-            else snprintf(tag, sizeof(tag), "%d.%d.", c.day, c.month);
-        }
         const bool overdue = t.hasDate && t.date < today;
-        G->drawRect(x0, y + 3, 15, 15, kBlack);
-        if (overdue) G->fillRect(x0 + 4, y + 7, 7, 7, kBlack);
-        int right = x1;
-        if (tag[0]) {
-            printRight(x1, y + 17, &FreeSansBold9pt7b, tag);
-            right = x1 - textWidth(&FreeSansBold9pt7b, tag) - 8;
-        }
-        const GFXfont* f = t.priority >= 2 ? &FreeSansBold9pt7b : &FreeSans9pt7b;
-        printAt(x0 + 24, y + 17, f, fit(f, t.text, right - (x0 + 24)));
-        y += 26;
+        const bool dueToday = t.hasDate && t.date == today;
+        for (int d = 0; d < 2; d++) G->drawRect(x0 + d, y + 6 + d, 18 - 2 * d, 18 - 2 * d, kBlack);
+        if (overdue || dueToday) G->fillRect(x0 + 5, y + 11, 8, 8, kBlack);     // due: filled
+        const GFXfont* f = (t.priority >= 2 || overdue || dueToday) ? F_TEXT_B : F_TEXT;
+        printFit(x0 + 30, y + 22, f, t.text, x1 - (x0 + 30));
+        y += ROW_H;
         shown++;
     }
     if (shown < S->taskCount) {
         char more[24];
-        snprintf(more, sizeof(more), "+ %d more", S->taskCount - shown);
-        printAt(x0 + 24, BODY_BOTTOM + 2, &FreeSans9pt7b, more);
+        snprintf(more, sizeof(more), "%d more ...", S->taskCount - shown);
+        printAt(x0 + 30, BODY_BOTTOM + 2, F_SMALL, more);
     }
-    if (S->taskCount == 0) printAt(x0 + 24, y + 17, &FreeSans9pt7b, "all done");
-}
-
-// ── footer ───────────────────────────────────────────────────────────────
-
-void hm(int64_t sec, char* out, size_t cap) {
-    if (!sec) { snprintf(out, cap, "--:--"); return; }
-    const ac::Civil c = ac::fromSec(sec);
-    snprintf(out, cap, "%02d:%02d", c.hour, c.minute);
-}
-
-void drawFooter(int64_t now) {
-    G->fillRect(0, FOOTER_Y - 2, W, 2, kBlack);
-    const ac::Civil c = ac::fromSec(now);
-    char a[8], b[8], wx[8];
-    hm(S->src[clockdata::SRC_CALENDAR].at, a, sizeof(a));
-    hm(S->src[clockdata::SRC_TODO].at, b, sizeof(b));
-    hm(S->src[clockdata::SRC_WEATHER].at, wx, sizeof(wx));
-    char line[120];
-    snprintf(line, sizeof(line), "Updated %d.%d. %02d:%02d  |  Events %s%s  To-do %s%s  Weather %s%s", c.day, c.month, c.hour, c.minute, a,
-             S->src[clockdata::SRC_CALENDAR].ok ? "" : " !", b, S->src[clockdata::SRC_TODO].ok ? "" : " !", wx,
-             S->src[clockdata::SRC_WEATHER].ok ? "" : " !");
-    printAt(10, FOOTER_Y + 22, &FreeSans9pt7b, line);
-    printRight(W - 10, FOOTER_Y + 22, &FreeSans9pt7b, String(opt.place));
+    if (S->taskCount == 0) printAt(x0 + 30, y + 22, F_TEXT, "All done");
 }
 
 }  // namespace
@@ -458,8 +361,8 @@ void draw(Adafruit_GFX& g, const clockdata::Data& snap, int64_t now, const Optio
     drawHeader(now);
     drawWeatherBand(now);
     drawCalendar(now);
+    G->fillRect(SEP_X - 6, BODY_Y, 4, BODY_BOTTOM - BODY_Y + 4, kBlack);
     drawTodo(now);
-    drawFooter(now);
 }
 
 }  // namespace epdlayout

@@ -25,7 +25,8 @@ struct ShotInfo {
 };
 
 struct Settings {
-    uint8_t brightness      = 1;     // MAX7219 intensity 0..15 (low on purpose: 16 modules pulse the supply)
+    uint8_t brightness      = 1;     // MAX7219 intensity 0..15 by day (low on purpose: 16 modules pulse the supply)
+    uint8_t brightnessNight = 1;     // between sunset and sunrise (30 min transition, common/daylight.h)
     bool    sqwEdgeKnown    = false; // DS3231 second edge auto-detected?
     bool    sqwFalling      = true;  // true: falling SQW edge marks the second change
     int32_t flashLatencyUs  = 0;     // delay hall edge -> LED fully on (calibrate)

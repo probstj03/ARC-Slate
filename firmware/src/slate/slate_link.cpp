@@ -62,7 +62,6 @@ bool onMessage(const String& type, JsonDocument& doc, AsyncWebSocketClient*) {
         if (!doc["brightness"].isNull()) {
             const uint8_t b = (uint8_t)constrain(doc["brightness"].as<int>(), 0, 15);
             state::lock(); state::settings().brightness = b; state::touch(); state::unlock();
-            mtx::setBrightness(b);
         }
         if (!doc["flashLatencyUs"].isNull()) {
             state::lock(); state::settings().flashLatencyUs = doc["flashLatencyUs"].as<int32_t>(); state::touch(); state::unlock();
