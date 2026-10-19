@@ -324,7 +324,7 @@ bool fetchTodo(Print* log) {
     }
     if (r.status != 200) {
         markFailure(SRC_TODO, statusText(r.status, r.error));
-        if (log) log->printf("To-Do: FEHLER %s\n", s_data.src[SRC_TODO].error);
+        if (log) log->printf("To-Do: FEHLER %s (%s)\n", s_data.src[SRC_TODO].error, req.url.c_str());
         return false;
     }
     ac::sortTasks(s_todoStage, s_todoStageN, ac::dayStart(nowLocal()));

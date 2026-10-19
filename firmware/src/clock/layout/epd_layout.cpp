@@ -320,9 +320,9 @@ void drawCalendar(int64_t now) {
 void drawTodo(int64_t now) {
     const int x0 = SEP_X + 14, x1 = W - 12;
     const int64_t today = ac::dayStart(now);
-    headingBar(SEP_X, BODY_Y, W - SEP_X, "TO-DO");
+    headingBar(SEP_X, BODY_Y, W - SEP_X, "DASHBOARD");
     if (!S->src[clockdata::SRC_TODO].ok) {
-        printAt(x0, BODY_Y + BAR_H + 34, F_TEXT_B, "To-do unavailable");
+        printAt(x0, BODY_Y + BAR_H + 34, F_TEXT_B, "Dashboard unavailable");
         const char* err = S->src[clockdata::SRC_TODO].error;
         printFit(x0, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", x1 - x0);
         return;
