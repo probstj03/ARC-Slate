@@ -165,7 +165,7 @@ void drawClock(int64_t sec) {
 
 // ── data chain: a 24x24 square (3 rows of 3 modules) ─────────────────────
 // Rows from top to bottom: F_LEFT, F_MID (mounted rotated), F_RIGHT. The top two rows show the weather icon
-// (24x16, animated at 400 ms per frame; the sun stands still), the bottom row the temperature.
+// (24x16, animated at 800 ms per frame; the sun stands still), the bottom row the temperature.
 
 void putRow(const ac::Canvas& cv, int row) {
     static const int first[3] = {F_LEFT, F_MID, F_RIGHT};
@@ -198,13 +198,16 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
     }
 }
 
-// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows.
-void drawIcon(const uint8_t* bmp) {
+// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows. `still`: the top-left area (the sun of
+// "partly cloudy", columns 0..10 of the top half) is taken from that frame, so only the clouds move.
+void drawIcon(const uint8_t* bmp, const uint8_t* still = nullptr) {
     for (int half = 0; half < 2; half++) {
         ac::Canvas cv;
         for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 24; x++)
-                if ((bmp[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
+            for (int x = 0; x < 24; x++) {
+                const uint8_t* src = (still && half == 0 && x <= 10) ? still : bmp;
+                if ((src[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
+            }
         putRow(cv, half);
     }
 }
@@ -340,13 +343,14 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
         }
     }
 
-    // data chain: weather icon (2.5 frames per second, calm) and temperature
+    // data chain: weather icon (0.8 s per frame, calm) and temperature
     const Anim a = animFor(s_view.wxOk, s_view.wmo, s_view.isDay, s_view.wind);
-    const uint32_t frame = nowMs / 400;
+    const uint32_t frame = nowMs / 800;
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
         if (a.len) {
-            drawIcon(a.frames[frame % (uint32_t)a.len]);
+            const bool sunStill = a.frames == anim16_partly_cloudy;
+            drawIcon(a.frames[frame % (uint32_t)a.len], sunStill ? a.frames[0] : nullptr);
         } else {                                         // no weather yet: a dot runs along
             ac::Canvas top;
             top.set((int)(frame % 24), 4);
