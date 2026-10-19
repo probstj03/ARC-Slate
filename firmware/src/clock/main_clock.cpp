@@ -103,7 +103,8 @@ void printHelp() {
         "\n=== ARC-Clock " ARC_FW_VERSION " - serielle Befehle ===\n"
         "  ?                   Status\n"
         "  cfg                 Einstellungen anzeigen\n"
-        "  nc url URL | nc user NAME | nc pass APP-PASSWORT | nc insecure 0|1\n"
+        "  nc url URL | nc user ID | nc login NAME|- | nc pass APP-PASSWORT | nc insecure 0|1\n"
+        "                      (ID = Benutzer-ID fuer die Pfade, z. B. Admin; login = Anmeldename des App-Passworts, z. B. E-Mail)\n"
         "  cal add PFAD | cal clear      CalDAV-Pfad (z. B. /remote.php/dav/calendars/julian/personal/)\n"
         "  todo path DATEI | todo head UEBERSCHRIFT | todo head -\n"
         "  loc LAT LON [ORT] | loc auto   Standort fuer das Wetter (auto: aus der oeffentlichen IP)\n"
@@ -149,6 +150,7 @@ void handleConfig(const String& cmd, const String& arg) {
         val.trim();
         if (key == "url") { while (val.endsWith("/")) val.remove(val.length() - 1); c.ncUrl = val; }
         else if (key == "user") c.ncUser = val;
+        else if (key == "login") c.ncLogin = val == "-" ? "" : val;
         else if (key == "pass") c.ncPass = val;
         else if (key == "insecure") c.tlsInsecure = parseBool(val);
         else { Serial.println("nc url|user|pass|insecure ..."); changed = false; }

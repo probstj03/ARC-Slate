@@ -21,6 +21,7 @@ void begin() {
     const bool first = !s_prefs.isKey("init");
     s_cfg.ncUrl = s_prefs.getString("ncUrl", "");
     s_cfg.ncUser = s_prefs.getString("ncUser", "");
+    s_cfg.ncLogin = s_prefs.getString("ncLogin", "");
     s_cfg.ncPass = s_prefs.getString("ncPass", "");
     s_cfg.calendars = s_prefs.getString("cals", "");
     s_cfg.todoPath = s_prefs.getString("todo", "");
@@ -91,6 +92,7 @@ void save() {
     s_prefs.putBool("init", true);
     s_prefs.putString("ncUrl", s_cfg.ncUrl);
     s_prefs.putString("ncUser", s_cfg.ncUser);
+    s_prefs.putString("ncLogin", s_cfg.ncLogin);
     s_prefs.putString("ncPass", s_cfg.ncPass);
     s_prefs.putString("cals", s_cfg.calendars);
     s_prefs.putString("todo", s_cfg.todoPath);
@@ -116,8 +118,9 @@ void save() {
 
 void print(Stream& out) {
     const ClockConfig c = copy();
-    out.printf("Nextcloud : %s  Benutzer %s  Passwort %s  TLS-Pruefung %s\n", c.ncUrl.isEmpty() ? "(nicht gesetzt)" : c.ncUrl.c_str(),
-               c.ncUser.isEmpty() ? "-" : c.ncUser.c_str(), c.ncPass.isEmpty() ? "-" : "***", c.tlsInsecure ? "AUS" : "an");
+    out.printf("Nextcloud : %s  Benutzer-ID %s  Login %s  Passwort %s  TLS-Pruefung %s\n", c.ncUrl.isEmpty() ? "(nicht gesetzt)" : c.ncUrl.c_str(),
+               c.ncUser.isEmpty() ? "-" : c.ncUser.c_str(), c.loginName().isEmpty() ? "-" : c.loginName().c_str(),
+               c.ncPass.isEmpty() ? "-" : "***", c.tlsInsecure ? "AUS" : "an");
     String cals[6];
     const int n = calendarList(c, cals, 6);
     for (int i = 0; i < n; i++) out.printf("Kalender  : %s\n", cals[i].c_str());

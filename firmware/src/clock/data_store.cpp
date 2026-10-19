@@ -170,7 +170,7 @@ int expandCalendars(const ClockConfig& cfg, const String in[], int nIn, String o
         clockhttp::Request req;
         req.method = "PROPFIND";
         req.url = cfg.ncUrl + home;
-        req.user = cfg.ncUser;
+        req.user = cfg.loginName();
         req.pass = cfg.ncPass;
         req.body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
                    "<d:prop><d:resourcetype/><c:supported-calendar-component-set/></d:prop></d:propfind>";
@@ -237,7 +237,7 @@ bool fetchCalendar(Print* log) {
         clockhttp::Request req;
         req.method = "REPORT";
         req.url = cfg.ncUrl + cals[i];
-        req.user = cfg.ncUser;
+        req.user = cfg.loginName();
         req.pass = cfg.ncPass;
         req.body = body;
         req.contentType = "application/xml; charset=utf-8";
@@ -294,7 +294,7 @@ bool fetchTodo(Print* log) {
     const ClockConfig cfg = clockcfg::copy();
     clockhttp::Request req;
     req.url = cfg.ncUrl + "/remote.php/dav/files/" + clockhttp::encodePath(cfg.ncUser) + "/" + clockhttp::encodePath(cfg.todoPath);
-    req.user = cfg.ncUser;
+    req.user = cfg.loginName();
     req.pass = cfg.ncPass;
     req.insecure = cfg.tlsInsecure;
     xSemaphoreTake(s_mtx, portMAX_DELAY);

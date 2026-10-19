@@ -7,7 +7,9 @@
 struct ClockConfig {
     // Nextcloud (CalDAV + WebDAV)
     String ncUrl;            // https://cloud.example.org   (no trailing slash)
-    String ncUser;
+    String ncUser;           // user ID (in the WebDAV paths, e.g. Admin)
+    String ncLogin;          // login name for the app password (e.g. the e-mail address); empty = ncUser
+    const String& loginName() const { return ncLogin.length() ? ncLogin : ncUser; }
     String ncPass;           // app password
     String calendars;        // CalDAV paths, one per line: /remote.php/dav/calendars/<user>/<name>/
     String todoPath;         // path of the md file inside the user's files: Notizen/ToDo.md
