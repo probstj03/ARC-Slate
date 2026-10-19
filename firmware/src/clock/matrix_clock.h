@@ -2,8 +2,8 @@
 // What ARC-Clock shows on the LED matrices while the lid is open: only current things, nothing that
 // alternates or blinks. Everything static (date, moon, sunrise/sunset, forecast, calendar, to-do) is on the e-ink.
 //   TC chain (56 columns)  : HH:MM:SS, centred
-//   Data chain (72 columns): one weather animation over all 9 modules with the current temperature on the right;
-//                            reminders and messages scroll here
+//   Data chain (3x3 modules = 24x24): animated weather icon in the top two rows (assets/weather_icons_24x16.h),
+//                            the current temperature (12°C) in the bottom row; reminders scroll over the TC chain
 // Brightness follows the sun (day / night value with a 30 min transition, see common/daylight.h).
 #include <Arduino.h>
 

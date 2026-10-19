@@ -2,6 +2,7 @@
 #include <ArcCore.h>
 #include "clock_config.h"
 #include "core/agenda.h"
+#include "assets/weather_icons_night.h"
 #include "core/anim.h"
 #include "core/civil.h"
 #include "daylight.h"
@@ -15,7 +16,7 @@ namespace {
 struct View {
     bool wxOk = false;
     int16_t temp10 = 0;
-    uint8_t wmo = 0;
+    uint8_t wmo = 0, wind = 0;
     bool isDay = true;
     int64_t sunrise = 0, sunset = 0;       // of today, local seconds (0 = unknown)
     bool haveNext = false, nextOngoing = false;
@@ -26,11 +27,11 @@ View s_view;
 
 // field layout of the data chain (the same as the slate: matrix_slate.cpp); the middle row is mounted rotated
 constexpr int F_LEFT = 0, F_MID = 3, F_RIGHT = 6;
-constexpr int DATA_W = ac::kWideW;          // 72
+constexpr int TC_W = 56;                   // TC chain: 7 modules
 
 // scrolling text on the data chain: lead-in of one display width, the text, lead-out
 constexpr int kTextCap = 64 * 6;
-constexpr int kScrollCap = DATA_W + kTextCap + DATA_W;
+constexpr int kScrollCap = TC_W + kTextCap + TC_W;
 uint8_t s_scrollCols[kScrollCap];
 int s_scrollWidth = 0;
 int s_scrollPos = -1;                      // -1 = not scrolling
@@ -61,6 +62,7 @@ void refreshView(int64_t sec) {
         v.wxOk = true;
         v.temp10 = w.temp10;
         v.wmo = w.wmo;
+        v.wind = w.windKmh;
         v.isDay = w.isDay;
         const int di = (int)((ac::dayStart(sec) - w.day0) / 86400);
         if (di >= 0 && di < 3) { v.sunrise = w.day[di].sunrise; v.sunset = w.day[di].sunset; }
@@ -161,13 +163,70 @@ void drawClock(int64_t sec) {
     mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
 }
 
-// ── data chain: one surface over all three rows ─────────────────────────
+// ── data chain: a 24x24 square (3 rows of 3 modules) ─────────────────────
+// Rows from top to bottom: F_LEFT, F_MID (mounted rotated), F_RIGHT. The top two rows show the weather icon
+// (24x16, animated, assets/weather_icons_24x16.h), the bottom row the temperature.
 
-void placeWide(const uint8_t* cols) {
-    mtx::place(mtx::CHAIN_DATA, cols, 24, F_LEFT, 3, false);
-    mtx::place(mtx::CHAIN_DATA, cols + 24, 24, F_MID, 3, true);
-    mtx::place(mtx::CHAIN_DATA, cols + 48, 24, F_RIGHT, 3, false);
+void putRow(const ac::Canvas& cv, int row) {
+    static const int first[3] = {F_LEFT, F_MID, F_RIGHT};
+    mtx::place(mtx::CHAIN_DATA, cv.col, ac::kFieldW, first[row], 3, row == 1);
 }
+
+struct Anim { const uint8_t* const* frames; int len; };
+
+Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
+    if (!wxOk) return {nullptr, 0};
+    const ac::WxKind k = ac::kindFromWmo(wmo);
+    const bool windy = windKmh >= 40;
+    switch (k) {
+        case ac::WxKind::Clear:
+            if (windy) return {anim16_wind, ANIM16_WIND_LEN};
+            return day ? Anim{anim16_sunny, ANIM16_SUNNY_LEN} : Anim{anim16_clear_night, ANIM16_CLEAR_NIGHT_LEN};
+        case ac::WxKind::PartlyCloudy:
+            return day ? Anim{anim16_partly_cloudy, ANIM16_PARTLY_CLOUDY_LEN}
+                       : Anim{anim16_partly_cloudy_night, ANIM16_PARTLY_CLOUDY_NIGHT_LEN};
+        case ac::WxKind::Cloudy:
+            if (windy) return {anim16_wind, ANIM16_WIND_LEN};
+            return {anim16_cloudy, ANIM16_CLOUDY_LEN};
+        case ac::WxKind::Fog: return {anim16_fog, ANIM16_FOG_LEN};
+        case ac::WxKind::Drizzle:
+        case ac::WxKind::Showers: return {anim16_rain, ANIM16_RAIN_LEN};
+        case ac::WxKind::Rain: return {anim16_heavy_rain, ANIM16_HEAVY_RAIN_LEN};
+        case ac::WxKind::Snow: return {anim16_snow, ANIM16_SNOW_LEN};
+        case ac::WxKind::Thunder: return {anim16_thunderstorm, ANIM16_THUNDERSTORM_LEN};
+        default: return {nullptr, 0};
+    }
+}
+
+// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows.
+void drawIcon(const uint8_t* bmp) {
+    for (int half = 0; half < 2; half++) {
+        ac::Canvas cv;
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 24; x++)
+                if ((bmp[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
+        putRow(cv, half);
+    }
+}
+
+void drawTemperature() {
+    char tt[12];
+    const int t = (int)lroundf(s_view.temp10 / 10.0f);
+    if (s_view.wxOk) snprintf(tt, sizeof(tt), "%d^C", t);
+    else snprintf(tt, sizeof(tt), "--^C");
+    uint8_t cols[48];
+    int w = mtx::renderText(tt, cols, sizeof(cols), 0);
+    if (w > 24) {                                        // -10 and below: without the C
+        snprintf(tt, sizeof(tt), "%d^", t);
+        w = mtx::renderText(tt, cols, sizeof(cols), 0);
+    }
+    ac::Canvas cv;
+    const int x0 = w < 24 ? (24 - w) / 2 : 0;
+    for (int k = 0; k < w && x0 + k < 24; k++) cv.col[x0 + k] = cols[k];
+    putRow(cv, 2);
+}
+
+// ── scrolling messages (reminders) on the TC chain ───────────────────────
 
 void startScrollText(const char* text, int repeat) {
     portENTER_CRITICAL(&s_scrollMux);
@@ -186,25 +245,10 @@ void beginScroll() {
     static uint8_t cols[kTextCap];
     const int used = mtx::renderText(text, cols, kTextCap, 0);
     memset(s_scrollCols, 0, sizeof(s_scrollCols));
-    memcpy(s_scrollCols + DATA_W, cols, used);
-    s_scrollWidth = DATA_W + used + DATA_W;
-    s_scrollPos = DATA_W / 2;                 // start with the text already half way in
+    memcpy(s_scrollCols + TC_W, cols, used);
+    s_scrollWidth = TC_W + used + TC_W;
+    s_scrollPos = TC_W / 2;                   // start with the text already half way in
     s_scrollNextMs = 0;
-}
-
-void drawWeatherScene(uint32_t nowMs) {
-    ac::WideCanvas cv;
-    ac::drawWeatherWide(cv, s_view.wxOk ? ac::kindFromWmo(s_view.wmo) : ac::WxKind::Unknown, s_view.isDay, nowMs / 160);
-    // the current temperature sits in the scene on the right, in a cleared box (the scene passes behind it)
-    char tt[8];
-    if (s_view.wxOk) snprintf(tt, sizeof(tt), "%d^", (int)lroundf(s_view.temp10 / 10.0f));
-    else snprintf(tt, sizeof(tt), "--^");
-    uint8_t tc[24];
-    const int w = mtx::renderText(tt, tc, sizeof(tc), 0);
-    const int x0 = DATA_W - 1 - w;                          // one free column on the right
-    for (int x = x0 - 2; x < DATA_W; x++) cv.col[x] = 0;    // two free columns on the left
-    for (int k = 0; k < w; k++) cv.col[x0 + k] = tc[k];
-    placeWide(cv.col);
 }
 
 // ── sparkle ──────────────────────────────────────────────────────────────
@@ -212,17 +256,19 @@ void drawWeatherScene(uint32_t nowMs) {
 void drawSparkle(uint32_t remainingMs, uint32_t totalMs) {
     // random pixels, fewer and fewer (out of 1024 per pixel)
     const uint32_t density = 30 + (remainingMs * 200) / (totalMs ? totalMs : 1);
-    uint8_t cols[72];
-    for (int chain = 0; chain < 2; chain++) {
-        const int width = chain == 0 ? 56 : 72;
-        for (int x = 0; x < width; x++) {
-            uint8_t b = 0;
-            for (int bit = 0; bit < 8; bit++)
-                if ((esp_random() % 1024) < density) b |= (uint8_t)(1 << bit);
-            cols[x] = b;
-        }
-        if (chain == 0) mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
-        else placeWide(cols);
+    auto randomCol = [&]() {
+        uint8_t b = 0;
+        for (int bit = 0; bit < 8; bit++)
+            if ((esp_random() % 1024) < density) b |= (uint8_t)(1 << bit);
+        return b;
+    };
+    uint8_t cols[56];
+    for (int x = 0; x < 56; x++) cols[x] = randomCol();
+    mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
+    for (int row = 0; row < 3; row++) {
+        ac::Canvas cv;
+        for (int x = 0; x < 24; x++) cv.col[x] = randomCol();
+        putRow(cv, row);
     }
 }
 
@@ -231,6 +277,7 @@ void drawSparkle(uint32_t remainingMs, uint32_t totalMs) {
 void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     static int64_t lastSec = -1;
     static uint32_t lastFrame = ~0u, lastSparkle = 0;
+    static int lastTemp = -10000;
     static bool sparkling = false;
 
     const int64_t sec = nowSec();
@@ -274,31 +321,44 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     if (sparkling) {
         sparkling = false;
         redraw = true;
-        lastFrame = ~0u;
     }
 
-    if (!tcOwned && (redraw || secChanged)) {
-        drawClock(sec);
-        out.tcDirty = true;
-    }
-
-    // data chain: a scrolling message, else the weather scene at about 6 fps
-    if (s_scrollPos >= 0) {
-        if ((int32_t)(nowMs - s_scrollNextMs) >= 0) {
+    // TC chain: a scrolling message, else the time
+    if (!tcOwned) {
+        if (s_scrollPos >= 0 && (int32_t)(nowMs - s_scrollNextMs) >= 0) {
             s_scrollNextMs = nowMs + 45;
-            placeWide(s_scrollCols + s_scrollPos);
-            out.dataDirty = true;
-            if (++s_scrollPos > s_scrollWidth - DATA_W) {
-                if (s_scrollRepeat > 0) { s_scrollRepeat--; s_scrollPos = DATA_W / 2; }
-                else { s_scrollPos = -1; lastFrame = ~0u; }
+            mtx::place(mtx::CHAIN_TC, s_scrollCols + s_scrollPos, TC_W, 0, 7, false);
+            out.tcDirty = true;
+            if (++s_scrollPos > s_scrollWidth - TC_W) {
+                if (s_scrollRepeat > 0) { s_scrollRepeat--; s_scrollPos = TC_W / 2; }
+                else { s_scrollPos = -1; redraw = true; }
             }
         }
-        return;
+        if (s_scrollPos < 0 && (redraw || secChanged)) {
+            drawClock(sec);
+            out.tcDirty = true;
+        }
     }
-    const uint32_t frame = nowMs / 160;
+
+    // data chain: weather icon (about 4.5 frames per second) and temperature
+    const Anim a = animFor(s_view.wxOk, s_view.wmo, s_view.isDay, s_view.wind);
+    const uint32_t frame = nowMs / 220;
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
-        drawWeatherScene(nowMs);
+        if (a.len) {
+            drawIcon(a.frames[frame % (uint32_t)a.len]);
+        } else {                                         // no weather yet: a dot runs along
+            ac::Canvas top;
+            top.set((int)(frame % 24), 4);
+            putRow(top, 0);
+            putRow(ac::Canvas(), 1);
+        }
+        out.dataDirty = true;
+    }
+    const int temp = s_view.wxOk ? s_view.temp10 : -9999;
+    if (redraw || temp != lastTemp) {
+        lastTemp = temp;
+        drawTemperature();
         out.dataDirty = true;
     }
 }
