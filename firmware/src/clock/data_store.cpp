@@ -31,6 +31,10 @@ uint32_t s_attempts[SRC_COUNT] = {0, 0, 0};
 uint32_t s_attemptsAtRequest[SRC_COUNT] = {0, 0, 0};
 uint32_t s_dueMs[SRC_COUNT] = {0, 0, 0};
 uint32_t s_backoffMs[SRC_COUNT] = {0, 0, 0};
+// Login refused (401/403) or rate limited by the server (429): no automatic retries - every retry would extend the
+// brute-force block of Nextcloud. Resumed by `fetch` or new credentials (clockdata::resume()).
+volatile bool s_paused[SRC_COUNT] = {false, false, false};
+int s_lastStatus = 0;           // HTTP status of the last failure (set by statusText)
 uint32_t s_lastCacheSave = 0;
 
 int64_t nowLocal() { return arc::clock::nowNs() / 1000000000LL; }
@@ -68,6 +72,7 @@ void markFailure(Source s, const char* what) {
 
 const char* statusText(int status, const String& error) {
     static char buf[48];
+    s_lastStatus = status;
     if (status == 401 || status == 403) return "Login abgelehnt (App-Passwort?)";
     if (status == 404) return "Pfad nicht gefunden";
     if (status <= 0) { snprintf(buf, sizeof(buf), "%s", error.c_str()); return buf; }
@@ -149,6 +154,7 @@ void feedString(const uint8_t* d, size_t n, void* c);
 int expandCalendars(const ClockConfig& cfg, const String in[], int nIn, String out[], int max, Print* log) {
     int n = 0;
     for (int i = 0; i < nIn && n < max; i++) {
+        if (s_lastStatus == 401 || s_lastStatus == 403 || s_lastStatus == 429) break;
         String p = in[i];
         p.trim();
         if (!p.startsWith("/")) p = "/" + p;
@@ -234,6 +240,7 @@ bool fetchCalendar(Print* log) {
     int okCount = 0;
     String lastError;
     for (int i = 0; i < n; i++) {
+        if (s_lastStatus == 401 || s_lastStatus == 403 || s_lastStatus == 429) break;   // refused: no further requests
         clockhttp::Request req;
         req.method = "REPORT";
         req.url = cfg.ncUrl + cals[i];
@@ -449,16 +456,20 @@ void fetchTask(void*) {
         const ClockConfig cfg = clockcfg::copy();
         for (int i = 0; i < SRC_COUNT; i++) {
             const Source s = (Source)i;
-            if (!enabled(s, cfg)) continue;
+            if (!enabled(s, cfg) || s_paused[i]) continue;
             const uint32_t now = millis();
             const bool forced = (s_requestMask >> i) & 1;
             if (!forced && (int32_t)(now - s_dueMs[i]) < 0) continue;
             s_requestMask &= ~(1u << i);
+            s_lastStatus = 0;
             const bool ok = fetchOne(s, nullptr);
             const uint32_t interval = intervalMs(s, cfg);
             if (ok) {
                 s_backoffMs[i] = 0;
                 s_dueMs[i] = millis() + interval;
+            } else if (s_lastStatus == 401 || s_lastStatus == 403 || s_lastStatus == 429) {
+                s_paused[i] = true;
+                Serial.printf("[CLK] %s: %s - keine automatischen Versuche mehr bis 'fetch' oder neue Zugangsdaten\n", sourceName(s), s_data.src[i].error);
             } else {
                 s_backoffMs[i] = s_backoffMs[i] ? min(s_backoffMs[i] * 2, interval) : 60000UL;
                 s_dueMs[i] = millis() + s_backoffMs[i];
@@ -517,7 +528,17 @@ bool waitForFresh(uint32_t timeoutMs) {
 void fetchNowVerbose(Source s, Print& out) {
     out.printf("[CLK] Hole %s ...\n", sourceName(s));
     if (!networkOk()) out.println("[CLK] Hinweis: kein WLAN mit Internet bzw. Uhrzeit unplausibel - der Abruf wird trotzdem versucht");
-    fetchOne(s, &out);
+    s_lastStatus = 0;
+    if (fetchOne(s, &out)) s_paused[s] = false;
+    else if (s_lastStatus == 401 || s_lastStatus == 403 || s_lastStatus == 429) {
+        s_paused[s] = true;
+        out.println("[CLK] keine automatischen Versuche bis zum naechsten 'fetch' (Nextcloud-Sperre nicht verlaengern)");
+    }
+}
+
+void resume() {
+    for (auto& p : s_paused) p = false;
+    for (auto& b : s_backoffMs) b = 0;
 }
 
 }  // namespace clockdata

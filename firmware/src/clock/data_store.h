@@ -31,4 +31,8 @@ const char* sourceName(Source s);
 // relocate() makes the next weather fetch look it up again.
 void relocate();
 
+// After a refused login / a 429 the sources stop retrying on their own; this lets them try again
+// (new credentials). `fetch` on the serial console retries one source.
+void resume();
+
 }  // namespace clockdata

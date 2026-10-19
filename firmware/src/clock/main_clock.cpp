@@ -210,6 +210,7 @@ void handleConfig(const String& cmd, const String& arg) {
     if (changed) {
         clockcfg::save();
         clockcfg::print(Serial);
+        if (cmd == "nc" || cmd == "cal" || cmd == "todo") clockdata::resume();   // new credentials / paths: try again
     }
 }
 
