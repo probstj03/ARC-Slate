@@ -2,7 +2,7 @@
 #include <ArcCore.h>
 #include "clock_config.h"
 #include "core/agenda.h"
-#include "assets/weather_icons_night.h"
+#include "assets/weather_icons_24x16.h"
 #include "core/anim.h"
 #include "core/civil.h"
 #include "daylight.h"
@@ -165,7 +165,7 @@ void drawClock(int64_t sec) {
 
 // ── data chain: a 24x24 square (3 rows of 3 modules) ─────────────────────
 // Rows from top to bottom: F_LEFT, F_MID (mounted rotated), F_RIGHT. The top two rows show the weather icon
-// (24x16, animated at 800 ms per frame; the sun stands still), the bottom row the temperature.
+// (24x16, animated at 800 ms per frame; the sun of "sunny" stands still), the bottom row the temperature.
 
 void putRow(const ac::Canvas& cv, int row) {
     static const int first[3] = {F_LEFT, F_MID, F_RIGHT};
@@ -183,8 +183,7 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
             if (windy) return {anim16_wind, ANIM16_WIND_LEN};
             return day ? Anim{anim16_sunny, 1} : Anim{anim16_clear_night, ANIM16_CLEAR_NIGHT_LEN};   // the sun stands still
         case ac::WxKind::PartlyCloudy:
-            return day ? Anim{anim16_partly_cloudy, ANIM16_PARTLY_CLOUDY_LEN}
-                       : Anim{anim16_partly_cloudy_night, ANIM16_PARTLY_CLOUDY_NIGHT_LEN};
+            return day ? Anim{anim16_heiter, ANIM16_HEITER_LEN} : Anim{anim16_heiter_nacht, ANIM16_HEITER_NACHT_LEN};
         case ac::WxKind::Cloudy:
             if (windy) return {anim16_wind, ANIM16_WIND_LEN};
             return {anim16_cloudy, ANIM16_CLOUDY_LEN};
@@ -198,17 +197,13 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
     }
 }
 
-// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows. `top`: the top half comes from this bitmap
-// instead (night: moon and stars above the clouds). `topMaxX`: columns right of it stay dark in the top half
-// ("partly cloudy": only the animated sun in the top-left corner, the clouds are in the bottom half).
-void drawIcon(const uint8_t* bmp, const uint8_t* top = nullptr, int topMaxX = 23) {
+// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows.
+void drawIcon(const uint8_t* bmp) {
     for (int half = 0; half < 2; half++) {
         ac::Canvas cv;
         for (int y = 0; y < 8; y++)
             for (int x = 0; x < 24; x++) {
-                if (half == 0 && x > topMaxX) continue;
-                const uint8_t* src = (top && half == 0) ? top : bmp;
-                if ((src[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
+                if ((bmp[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
             }
         putRow(cv, half);
     }
@@ -351,11 +346,7 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
         if (a.len) {
-            const uint8_t* top = nullptr;
-            int topMaxX = 23;
-            if (a.frames == anim16_partly_cloudy) topMaxX = 10;                      // the sun in the corner only
-            else if (a.frames == anim16_partly_cloudy_night) top = anim16_clear_night[frame % ANIM16_CLEAR_NIGHT_LEN];
-            drawIcon(a.frames[frame % (uint32_t)a.len], top, topMaxX);
+            drawIcon(a.frames[frame % (uint32_t)a.len]);
         } else {                                         // no weather yet: a dot runs along
             ac::Canvas top;
             top.set((int)(frame % 24), 4);
