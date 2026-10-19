@@ -154,16 +154,16 @@ void checkReminder(int64_t sec) {
 void drawClock(int64_t sec) {
     const ac::Civil c = ac::fromSec(sec);
     char buf[12];
-    snprintf(buf, sizeof(buf), "%02d:%02d", c.hour, c.minute);
+    snprintf(buf, sizeof(buf), "%02d:%02d:%02d", c.hour, c.minute, c.second);
     uint8_t cols[56];
-    mtx::renderText(buf, cols, 56, 1);                       // HH:MM = 25 columns, then a clear gap
+    mtx::renderText(buf, cols, 56, 0);                       // HH:MM:SS = columns 0..38
+    // a vertical line at column 41 separates the temperature (columns 43..55, right-aligned, without the degree sign)
     if (s_view.wxOk) {
-        const int t = (int)lroundf(s_view.temp10 / 10.0f);
         char tt[8];
-        snprintf(tt, sizeof(tt), "%d^", t);
+        snprintf(tt, sizeof(tt), "%d", (int)lroundf(s_view.temp10 / 10.0f));
         uint8_t tc[24];
-        int w = mtx::renderText(tt, tc, sizeof(tc), 0);
-        if (w > 15) { snprintf(tt, sizeof(tt), "%d", t); w = mtx::renderText(tt, tc, sizeof(tc), 0); }   // -10 and below
+        const int w = mtx::renderText(tt, tc, sizeof(tc), 0);
+        if (w <= 13) cols[41] = 0x3E;                           // -10 and below need the space of the line
         for (int k = 0; k < w && k < 16; k++) cols[56 - w + k] = tc[k];
     }
     mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
