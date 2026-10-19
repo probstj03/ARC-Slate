@@ -198,14 +198,14 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
     }
 }
 
-// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows. `still`: the top-left area (the sun of
-// "partly cloudy", columns 0..10 of the top half) is taken from that frame, so only the clouds move.
-void drawIcon(const uint8_t* bmp, const uint8_t* still = nullptr) {
+// 24x16 bitmap (3 bytes per row, MSB left) -> the two upper rows. `top`: the top half comes from this bitmap
+// instead ("partly cloudy": the still, centred sun of "sunny" above the drifting clouds of the bottom half).
+void drawIcon(const uint8_t* bmp, const uint8_t* top = nullptr) {
     for (int half = 0; half < 2; half++) {
         ac::Canvas cv;
         for (int y = 0; y < 8; y++)
             for (int x = 0; x < 24; x++) {
-                const uint8_t* src = (still && half == 0 && x <= 10) ? still : bmp;
+                const uint8_t* src = (top && half == 0) ? top : bmp;
                 if ((src[(half * 8 + y) * 3 + x / 8] >> (7 - x % 8)) & 1) cv.set(x, y);
             }
         putRow(cv, half);
@@ -349,8 +349,10 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
         if (a.len) {
-            const bool sunStill = a.frames == anim16_partly_cloudy;
-            drawIcon(a.frames[frame % (uint32_t)a.len], sunStill ? a.frames[0] : nullptr);
+            const uint8_t* top = nullptr;
+            if (a.frames == anim16_partly_cloudy) top = anim16_sunny[0];
+            else if (a.frames == anim16_partly_cloudy_night) top = anim16_clear_night[frame % ANIM16_CLEAR_NIGHT_LEN];
+            drawIcon(a.frames[frame % (uint32_t)a.len], top);
         } else {                                         // no weather yet: a dot runs along
             ac::Canvas top;
             top.set((int)(frame % 24), 4);
