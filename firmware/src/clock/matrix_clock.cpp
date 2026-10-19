@@ -3,6 +3,7 @@
 #include "clock_config.h"
 #include "core/agenda.h"
 #include "assets/weather_icons_24x16.h"
+#include "assets/weather_icons_night.h"
 #include "core/anim.h"
 #include "core/civil.h"
 #include "daylight.h"
@@ -181,9 +182,9 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
     switch (k) {
         case ac::WxKind::Clear:
             if (windy) return {anim16_wind, ANIM16_WIND_LEN};
-            return day ? Anim{anim16_sunny, 1} : Anim{anim16_clear_night, ANIM16_CLEAR_NIGHT_LEN};   // the sun stands still
+            return day ? Anim{anim16_sunny, 1} : Anim{anim16_clear_night_still, ANIM16_CLEAR_NIGHT_STILL_LEN};   // the sun stands still
         case ac::WxKind::PartlyCloudy:
-            return day ? Anim{anim16_heiter, ANIM16_HEITER_LEN} : Anim{anim16_heiter_nacht, ANIM16_HEITER_NACHT_LEN};
+            return day ? Anim{anim16_heiter, ANIM16_HEITER_LEN} : Anim{anim16_heiter_nacht_still, ANIM16_HEITER_NACHT_STILL_LEN};
         case ac::WxKind::Cloudy:
             if (windy) return {anim16_wind, ANIM16_WIND_LEN};
             return {anim16_cloudy, ANIM16_CLOUDY_LEN};

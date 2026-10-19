@@ -240,19 +240,22 @@ static void testTodo() {
         for (const char* c = kTodoMd; *c; c++) p.feed(c, 1);
         p.finish();
     }
-    CHECK(g_tasks.size() == 6);
-    if (g_tasks.size() == 6) {
+    CHECK(g_tasks.size() == 7);
+    if (g_tasks.size() == 7) {
         CHECK_STR(g_tasks[0].text, "Ohne Datum");
         CHECK(!g_tasks[0].hasDate);
-        CHECK_STR(g_tasks[1].text, "Steuer machen");
-        CHECK(g_tasks[1].hasDate && g_tasks[1].date == L(2026, 10, 15));
-        CHECK(g_tasks[1].priority == 2);
-        CHECK_STR(g_tasks[2].text, "Bericht an Herrn M\xFCller senden Projekt");
-        CHECK(g_tasks[2].date == L(2026, 10, 12));
-        CHECK_STR(g_tasks[3].text, "Unteraufgabe");
-        CHECK(g_tasks[3].date == L(2026, 10, 11));
-        CHECK_STR(g_tasks[4].text, "Link Doku");
-        CHECK(g_tasks[4].date == L(2026, 10, 20));            // scheduled counts when there is no due date
+        CHECK_STR(g_tasks[1].text, "Erledigt");               // ticked tasks are read too
+        CHECK(g_tasks[1].done);
+        CHECK_STR(g_tasks[2].text, "Steuer machen");
+        CHECK(g_tasks[2].hasDate && g_tasks[2].date == L(2026, 10, 15));
+        CHECK(g_tasks[2].priority == 2);
+        CHECK(!g_tasks[2].done);
+        CHECK_STR(g_tasks[3].text, "Bericht an Herrn M�ller senden Projekt");
+        CHECK(g_tasks[3].date == L(2026, 10, 12));
+        CHECK_STR(g_tasks[4].text, "Unteraufgabe");
+        CHECK(g_tasks[4].date == L(2026, 10, 11));
+        CHECK_STR(g_tasks[5].text, "Link Doku");
+        CHECK(g_tasks[5].date == L(2026, 10, 20));            // scheduled counts when there is no due date
     }
 
     // only the section below "## Heute"
@@ -275,10 +278,12 @@ static void testTodo() {
     sortTasks(g_tasks.data(), (int)g_tasks.size(), today);
     CHECK_STR(g_tasks[0].text, "Unteraufgabe");              // overdue (11.10.)
     CHECK(g_tasks[0].overdueFlag);
-    CHECK_STR(g_tasks[1].text, "Bericht an Herrn M\xFCller senden Projekt");   // today
-    CHECK_STR(g_tasks[2].text, "Steuer machen");             // in 3 days
-    CHECK_STR(g_tasks[3].text, "Link Doku");                 // in 8 days = later
-    CHECK_STR(g_tasks[4].text, "Ohne Datum");                // undated
+    CHECK_STR(g_tasks[1].text, "Erledigt");                  // ticked: stays at its place in the file
+    CHECK(!g_tasks[1].overdueFlag);
+    CHECK_STR(g_tasks[2].text, "Bericht an Herrn M�ller senden Projekt");   // today
+    CHECK_STR(g_tasks[3].text, "Steuer machen");             // in 3 days
+    CHECK_STR(g_tasks[4].text, "Link Doku");                 // in 8 days = later
+    CHECK_STR(g_tasks[5].text, "Ohne Datum");                // undated
 }
 
 // ── agenda ───────────────────────────────────────────────────────────────

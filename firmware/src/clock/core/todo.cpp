@@ -128,16 +128,18 @@ void TodoParser::line() {
     if ((*p == '-' || *p == '*' || *p == '+') && p[1] == ' ') {
         p += 2;
         while (*p == ' ') p++;
-        if (p[0] == '[' && p[2] == ']' && (p[1] == ' ' || p[1] == '/')) {
-            if (_inSection) task(p + 3);
+        const bool ticked = p[1] == 'x' || p[1] == 'X';
+        if (p[0] == '[' && p[2] == ']' && (p[1] == ' ' || p[1] == '/' || ticked)) {
+            if (_inSection) task(p + 3, ticked);
         }
     }
 }
 
-void TodoParser::task(const char* text) {
+void TodoParser::task(const char* text, bool done) {
     char raw[kLine];
     size_t o = 0;
     Task t;
+    t.done = done;
     int64_t dueDate = 0, schedDate = 0;
     bool haveDue = false, haveSched = false;
     const size_t total = strlen(text);
@@ -267,7 +269,7 @@ int taskGroup(const Task& t, int64_t today) {
 }
 
 void sortTasks(Task* tasks, int n, int64_t today) {
-    for (int i = 0; i < n; i++) tasks[i].overdueFlag = tasks[i].hasDate && tasks[i].date < today;
+    for (int i = 0; i < n; i++) tasks[i].overdueFlag = !tasks[i].done && tasks[i].hasDate && tasks[i].date < today;
     auto before = [today](const Task& a, const Task& b) {
         const int ga = taskGroup(a, today), gb = taskGroup(b, today);
         if (ga != gb) return ga < gb;
@@ -275,11 +277,16 @@ void sortTasks(Task* tasks, int n, int64_t today) {
         if (a.priority != b.priority) return a.priority > b.priority;
         return a.order < b.order;
     };
-    for (int i = 1; i < n; i++) {                 // insertion sort: small n, stable
-        Task key = tasks[i];
-        int j = i - 1;
-        while (j >= 0 && before(key, tasks[j])) { tasks[j + 1] = tasks[j]; j--; }
-        tasks[j + 1] = key;
+    // Ticked tasks keep their place in the list (as in the file); the open ones are sorted on the other places.
+    int slot[64];
+    int m = 0;
+    for (int i = 0; i < n && m < 64; i++)
+        if (!tasks[i].done) slot[m++] = i;
+    for (int a = 1; a < m; a++) {                 // insertion sort over the open slots: small n, stable
+        Task key = tasks[slot[a]];
+        int b = a - 1;
+        while (b >= 0 && before(key, tasks[slot[b]])) { tasks[slot[b + 1]] = tasks[slot[b]]; b--; }
+        tasks[slot[b + 1]] = key;
     }
 }
 

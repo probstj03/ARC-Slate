@@ -255,64 +255,144 @@ void drawWeatherBand(int64_t now) {
     thickLine(WX_Y + WX_H);
 }
 
-// ── calendar: today and the next days with events ───────────────────────
+// ── calendar: today and tomorrow as columns, each split into morning (until 12:00) and afternoon ──
 
-void dayLabel(int64_t ds, int64_t today, char* out, size_t cap) {
+void dayHeader(int64_t ds, int64_t today, char* out, size_t cap) {
     const ac::Civil c = ac::fromSec(ds);
     const int wd = ac::weekday(ac::daysOf(ds));
-    if (ds == today) snprintf(out, cap, "Today");
-    else if (ds == today + 86400) snprintf(out, cap, "Tomorrow");
-    else snprintf(out, cap, "%s %d %s", ac::weekdayName(wd, false), c.day, ac::monthName(c.month, true));
+    if (ds == today) snprintf(out, cap, "Today, %s %d", ac::weekdayName(wd, true), c.day);
+    else if (ds == today + 86400) snprintf(out, cap, "Tomorrow, %s %d", ac::weekdayName(wd, true), c.day);
+    else snprintf(out, cap, "%s %d", ac::weekdayName(wd, true), c.day);
 }
 
 void drawCalendar(int64_t now) {
     const ac::Agenda& a = S->agenda;
     const int64_t today = ac::dayStart(now);
-    const int x1 = SEP_X - 14;
     headingBar(0, BODY_Y, SEP_X - 8, "EVENTS");
     if (!S->src[clockdata::SRC_CALENDAR].ok) {
         printAt(12, BODY_Y + BAR_H + 34, F_TEXT_B, "Calendar unavailable");
         const char* err = S->src[clockdata::SRC_CALENDAR].error;
-        printFit(12, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", x1 - 12);
+        printFit(12, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", SEP_X - 30);
         return;
     }
-    int y = BODY_Y + BAR_H + 8;
-    bool hidden = false;
-    for (int day = 0; day < 7; day++) {
-        const int64_t ds = today + (int64_t)day * 86400;
-        int idx[ac::kMaxEvents];
-        int n = 0;
-        for (int i = 0; i < a.n; i++) {
-            const int64_t end = a.ev[i].end > a.ev[i].start ? a.ev[i].end : a.ev[i].start + 1;
-            if (a.ev[i].start < ds + 86400 && end > ds && n < ac::kMaxEvents) idx[n++] = i;
+    constexpr int DAYS = 2;
+    constexpr int AXIS_W = 30;                       // hour labels
+    const int x0 = AXIS_W, x1 = SEP_X - 12;
+    const int colW = (x1 - x0) / DAYS;
+    const int headY = BODY_Y + BAR_H + 4;            // day names
+    const int allDayY = headY + 28;                  // all-day bars
+    constexpr int ALLDAY_H = 20, ALLDAY_ROWS = 2;
+    constexpr int NOON = 12 * 60;
+
+    // visible hours: morning 8..12 and afternoon 12..19, widened by the events of the two days
+    int amStart = 8 * 60, pmEnd = 19 * 60;
+    for (int i = 0; i < a.n; i++) {
+        const ac::Event& e = a.ev[i];
+        if (e.allDay || e.start >= today + DAYS * 86400LL || e.end <= today) continue;
+        if (ac::dayStart(e.start) >= today) amStart = min(amStart, (int)((e.start - ac::dayStart(e.start)) / 3600) * 60);
+        const int64_t end = e.end > e.start ? e.end : e.start + 1800;
+        if (ac::dayStart(end - 1) == ac::dayStart(e.start)) {
+            const int m = (int)((end - ac::dayStart(e.start)) / 60);
+            pmEnd = max(pmEnd, ((m + 59) / 60) * 60);
         }
-        if (n == 0 && day != 0) continue;
-        if (y + ROW_H * 2 > BODY_BOTTOM) { hidden = true; break; }
-        char label[40];
-        dayLabel(ds, today, label, sizeof(label));
-        printAt(12, y + 22, F_TEXT_B, label);
-        y += ROW_H;
-        if (n == 0) {
-            printAt(84, y + 22, F_TEXT, "No events");
-            y += ROW_H + 8;
-            continue;
-        }
-        for (int k = 0; k < n; k++) {
-            if (y + ROW_H > BODY_BOTTOM) { hidden = true; break; }
-            const ac::Event& e = a.ev[idx[k]];
-            if (!e.allDay && e.start >= ds) {
-                const ac::Civil s = ac::fromSec(e.start);
-                char tl[8];
-                snprintf(tl, sizeof(tl), "%02d:%02d", s.hour, s.minute);
-                printAt(12, y + 22, F_TEXT, tl);
-            }
-            printFit(84, y + 22, F_TEXT, e.summary, x1 - 84);
-            y += ROW_H;
-        }
-        if (hidden) break;
-        y += 8;
     }
-    if (hidden) printRight(x1, BODY_BOTTOM + 2, F_SMALL, "more ...");
+
+    // how many all-day rows are needed (at most two)
+    int allDayRows = 0;
+    for (int d = 0; d < DAYS; d++) {
+        const int64_t ds = today + d * 86400LL;
+        int n = 0;
+        for (int i = 0; i < a.n; i++)
+            if (a.ev[i].allDay && a.ev[i].start < ds + 86400 && a.ev[i].end > ds) n++;
+        allDayRows = max(allDayRows, min(n, ALLDAY_ROWS));
+    }
+    const int gridY = allDayY + allDayRows * (ALLDAY_H + 3) + 4;
+    const int halfH = (BODY_BOTTOM - gridY - 6) / 2;  // morning and afternoon get the same height
+    struct Half { int from, to, y; };
+    const Half halves[2] = {{amStart, NOON, gridY}, {NOON, pmEnd, gridY + halfH + 6}};
+    auto yOf = [&](const Half& h, int minutes) { return h.y + (int)((long)(minutes - h.from) * halfH / (h.to - h.from)); };
+
+    // per half: dotted hour lines, labels every two hours, a solid line between morning and afternoon
+    for (const Half& h : halves) {
+        for (int m = h.from; m <= h.to; m += 60) {
+            const int y = yOf(h, m);
+            for (int x = x0; x < x1; x += 4) G->drawPixel(x, y, kBlack);
+            if (m < h.to && ((m / 60) % 2 == 0 || m == h.from)) {
+                char hb[4];
+                snprintf(hb, sizeof(hb), "%d", m / 60);
+                printRight(AXIS_W - 6, y + 14, F_SMALL, hb);
+            }
+        }
+    }
+    G->fillRect(x0, halves[1].y - 4, x1 - x0, 2, kBlack);
+
+    for (int d = 0; d < DAYS; d++) {
+        const int64_t ds = today + d * 86400LL;
+        const int cx = x0 + d * colW;
+        char head[32];
+        dayHeader(ds, today, head, sizeof(head));
+        printFit(cx + 6, headY + 20, F_TEXT_B, head, colW - 8);
+        if (d > 0) G->fillRect(cx - 1, headY, 2, BODY_BOTTOM - headY, kBlack);   // column separator
+
+        // all-day events as black bars with white text
+        int row = 0;
+        for (int i = 0; i < a.n && row < ALLDAY_ROWS; i++) {
+            const ac::Event& e = a.ev[i];
+            if (!e.allDay || e.start >= ds + 86400 || e.end <= ds) continue;
+            const int by = allDayY + row * (ALLDAY_H + 3);
+            G->fillRoundRect(cx + 3, by, colW - 6, ALLDAY_H, 3, kBlack);
+            G->setTextColor(kWhite);
+            printFit(cx + 7, by + 15, F_SMALL, e.summary, colW - 14);
+            G->setTextColor(kBlack);
+            row++;
+        }
+
+        // timed events as boxes; overlapping ones share the width (lanes)
+        int idx[ac::kMaxEvents], lane[ac::kMaxEvents], n = 0;
+        for (int i = 0; i < a.n && n < ac::kMaxEvents; i++) {
+            const ac::Event& e = a.ev[i];
+            if (e.allDay || e.start >= ds + 86400 || e.end <= ds) continue;
+            idx[n++] = i;
+        }
+        int lanes = 1;
+        for (int k = 0; k < n; k++) {
+            lane[k] = 0;
+            for (int j = 0; j < k; j++) {
+                const ac::Event& p = a.ev[idx[j]];
+                const ac::Event& q = a.ev[idx[k]];
+                if (p.start < q.end && q.start < p.end && lane[j] == lane[k]) { lane[k]++; j = -1; }
+            }
+            lanes = max(lanes, lane[k] + 1);
+        }
+        lanes = min(lanes, 3);
+        for (int k = 0; k < n; k++) {
+            if (lane[k] >= lanes) continue;
+            const ac::Event& e = a.ev[idx[k]];
+            const int sMin = (int)((max(e.start, ds) - ds) / 60);
+            const int eMin = (int)((min(e.end > e.start ? e.end : e.start + 1800, ds + 86400) - ds) / 60);
+            const int lw = (colW - 6) / lanes;
+            const int bx = cx + 3 + lane[k] * lw;
+            bool titled = false;
+            for (const Half& h : halves) {                       // an event over noon gets a box in both halves
+                const int from = max(sMin, h.from), to = min(eMin, h.to);
+                if (to <= from && !(sMin >= h.from && sMin < h.to)) continue;
+                const int top = yOf(h, max(from, h.from));
+                const int bottom = min(max(yOf(h, to), top + 22), h.y + halfH);
+                G->fillRect(bx, top, lw - 2, bottom - top, kWhite);
+                G->drawRect(bx, top, lw - 2, bottom - top, kBlack);
+                G->drawRect(bx + 1, top + 1, lw - 4, bottom - top - 2, kBlack);
+                G->fillRect(bx, top, 4, bottom - top, kBlack);                  // accent on the left
+                printFit(bx + 7, top + 16, F_SMALL, e.summary, lw - 12);
+                if (!titled && bottom - top >= 40 && e.start >= ds) {           // tall enough: the time below
+                    const ac::Civil st = ac::fromSec(e.start);
+                    char tl[8];
+                    snprintf(tl, sizeof(tl), "%02d:%02d", st.hour, st.minute);
+                    printAt(bx + 7, top + 34, F_SMALL, tl);
+                }
+                titled = true;
+            }
+        }
+    }
 }
 
 // ── to-do ────────────────────────────────────────────────────────────────
@@ -332,12 +412,22 @@ void drawTodo(int64_t now) {
     for (int i = 0; i < S->taskCount; i++) {
         if (y + ROW_H > BODY_BOTTOM - (i + 1 < S->taskCount ? 20 : 0)) break;
         const ac::Task& t = S->tasks[i];
-        const bool overdue = t.hasDate && t.date < today;
-        const bool dueToday = t.hasDate && t.date == today;
+        const bool overdue = !t.done && t.hasDate && t.date < today;
+        const bool dueToday = !t.done && t.hasDate && t.date == today;
         for (int d = 0; d < 2; d++) G->drawRect(x0 + d, y + 6 + d, 18 - 2 * d, 18 - 2 * d, kBlack);
         if (overdue || dueToday) G->fillRect(x0 + 5, y + 11, 8, 8, kBlack);     // due: filled
-        const GFXfont* f = (t.priority >= 2 || overdue || dueToday) ? F_TEXT_B : F_TEXT;
+        if (t.done) {                                                           // ticked: a check mark
+            for (int d = 0; d < 3; d++) {
+                G->drawLine(x0 + 3, y + 14 + d, x0 + 7, y + 18 + d, kBlack);
+                G->drawLine(x0 + 7, y + 18 + d, x0 + 16, y + 6 + d, kBlack);
+            }
+        }
+        const GFXfont* f = (!t.done && (t.priority >= 2 || overdue || dueToday)) ? F_TEXT_B : F_TEXT;
         printFit(x0 + 30, y + 22, f, t.text, x1 - (x0 + 30));
+        if (t.done) {                                                           // and struck through
+            const int w = textWidth(f, t.text);
+            G->fillRect(x0 + 30, y + 14, min(w, x1 - (x0 + 30)), 2, kBlack);
+        }
         y += ROW_H;
         shown++;
     }
