@@ -25,8 +25,9 @@ void drawWeather(Canvas& c, WxKind kind, bool day, uint32_t frame);
 constexpr int kWideW = 72;
 struct WideCanvas {
     uint8_t col[kWideW] = {0};
+    int w = kWideW;                    // width used by the scene (the rest stays dark, e.g. for the temperature)
     void clear() { for (auto& c : col) c = 0; }
-    void set(int x, int y) { if (x >= 0 && x < kWideW && y >= 0 && y < kFieldH) col[x] |= (uint8_t)(0x80 >> y); }
+    void set(int x, int y) { if (x >= 0 && x < w && y >= 0 && y < kFieldH) col[x] |= (uint8_t)(0x80 >> y); }
     bool get(int x, int y) const { return x >= 0 && x < kWideW && y >= 0 && y < kFieldH && (col[x] & (0x80 >> y)); }
 };
 

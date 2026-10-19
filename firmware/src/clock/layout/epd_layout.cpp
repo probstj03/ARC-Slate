@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "../assets/logo_jp.h"
-#include "../assets/wx_icons.h"
 #include "../core/civil.h"
 #include "../core/moon.h"
 #include "../fonts/Lato10pt.h"
@@ -13,6 +12,9 @@
 #include "../fonts/LatoBold20pt.h"
 #include "../fonts/LatoBold28pt.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Only content that changes at most once a day (or when the calendar / to-do list really changes) is drawn here:
 // epd_clock.cpp redraws the panel only when the picture differs. Everything current (time, current weather,
@@ -94,11 +96,95 @@ void headingBar(int x, int y, int w, const char* title) {
 
 void thickLine(int y) { G->fillRect(0, y, epdlayout::W, 4, kBlack); }
 
-// ── icons: "Weather Icons" by Erik Flowers (OFL) as bitmaps, assets/wx_icons.h ──
+// ── icons ────────────────────────────────────────────────────────────────
 
-void drawWeatherIcon(int ox, int oy, ac::WxKind kind) {
-    const int i = (int)kind;
-    if (i >= 0 && i < (int)(sizeof(kWxIcons) / sizeof(kWxIcons[0]))) G->drawBitmap(ox, oy, kWxIcons[i], WX_ICON, WX_ICON, kBlack);
+// A line with round caps, `t` pixels thick.
+void thickStroke(int x0, int y0, int x1, int y1, int t) {
+    const int steps = max(abs(x1 - x0), abs(y1 - y0));
+    for (int i = 0; i <= steps; i++) {
+        const int x = x0 + (x1 - x0) * i / (steps ? steps : 1), y = y0 + (y1 - y0) * i / (steps ? steps : 1);
+        G->fillCircle(x, y, t / 2, kBlack);
+    }
+}
+
+// Sun: solid disc, a white gap, 8 short rays with round ends.
+void drawSun(int cx, int cy, int r) {
+    G->fillCircle(cx, cy, r, kBlack);
+    const int r0 = r + r / 2 + 2, r1 = r * 2 + 4;
+    for (int i = 0; i < 8; i++) {
+        const float a = i * (float)M_PI / 4.0f;
+        thickStroke(cx + (int)lroundf(cosf(a) * r0), cy + (int)lroundf(sinf(a) * r0), cx + (int)lroundf(cosf(a) * r1),
+                    cy + (int)lroundf(sinf(a) * r1), r >= 12 ? 5 : 4);
+    }
+}
+
+void drawMoonIcon(int cx, int cy, int r, double phaseFrac) {
+    const double k = cos(2.0 * M_PI * phaseFrac);      // 1 new, -1 full
+    const bool waxing = phaseFrac < 0.5;
+    for (int d = 0; d < 3; d++) G->drawCircle(cx, cy, r - d, kBlack);
+    for (int y = -r + 1; y < r; y++) {
+        const double hw = sqrt((double)r * r - (double)y * y);
+        int x0, x1;
+        if (waxing) { x0 = (int)lround(k * hw); x1 = (int)floor(hw); }
+        else { x0 = (int)ceil(-hw); x1 = (int)lround(-k * hw); }
+        if (x1 > x0) G->drawFastHLine(cx + x0, cy + y, x1 - x0 + 1, kBlack);
+    }
+}
+
+void drawCloud(int ox, int oy, int s, bool outlineWhite = false) {
+    auto shape = [&](uint16_t color, int grow) {
+        G->fillCircle(ox + s * 22 / 64, oy + s * 38 / 64, s * 11 / 64 + grow, color);
+        G->fillCircle(ox + s * 36 / 64, oy + s * 30 / 64, s * 15 / 64 + grow, color);
+        G->fillCircle(ox + s * 50 / 64, oy + s * 39 / 64, s * 10 / 64 + grow, color);
+        G->fillRoundRect(ox + s * 12 / 64 - grow, oy + s * 38 / 64 - grow, s * 46 / 64 + 2 * grow, s * 14 / 64 + 2 * grow, s * 7 / 64, color);
+    };
+    if (outlineWhite) shape(kWhite, 4);
+    shape(kBlack, 0);
+}
+
+void drawWeatherIcon(int ox, int oy, ac::WxKind kind) {       // within a 72x72 box, day symbols
+    switch (kind) {
+        case ac::WxKind::Clear:
+            drawSun(ox + 36, oy + 36, 14);
+            break;
+        case ac::WxKind::PartlyCloudy:
+            drawSun(ox + 26, oy + 26, 10);
+            drawCloud(ox + 8, oy + 16, 64, true);
+            break;
+        case ac::WxKind::Cloudy:
+            drawCloud(ox, oy + 2, 72);
+            break;
+        case ac::WxKind::Fog:
+            for (int i = 0; i < 4; i++) G->fillRoundRect(ox + 6 + (i % 2) * 10, oy + 16 + i * 13, 52, 6, 3, kBlack);
+            break;
+        case ac::WxKind::Drizzle:
+            drawCloud(ox, oy - 6, 72);
+            for (int i = 0; i < 4; i++) G->fillCircle(ox + 18 + i * 12, oy + 54 + (i % 2) * 7, 3, kBlack);
+            break;
+        case ac::WxKind::Rain:
+        case ac::WxKind::Showers:
+            drawCloud(ox, oy - 6, 72);
+            for (int i = 0; i < 4; i++) {
+                const int x = ox + 18 + i * 12, y = oy + 50 + (i % 2) * 6;
+                thickStroke(x, y, x - 4, y + 12, 3);
+            }
+            break;
+        case ac::WxKind::Snow:
+            drawCloud(ox, oy - 6, 72);
+            for (int i = 0; i < 3; i++) {
+                const int x = ox + 20 + i * 16, y = oy + 60 + (i % 2) * 5;
+                thickStroke(x - 5, y, x + 5, y, 3);
+                thickStroke(x, y - 5, x, y + 5, 3);
+            }
+            break;
+        case ac::WxKind::Thunder:
+            drawCloud(ox, oy - 8, 72);
+            G->fillTriangle(ox + 38, oy + 44, ox + 24, oy + 64, ox + 36, oy + 62, kBlack);
+            G->fillTriangle(ox + 34, oy + 60, ox + 46, oy + 46, ox + 30, oy + 71, kBlack);
+            break;
+        default:
+            break;
+    }
 }
 
 // ── header: logo, date, week, moon ───────────────────────────────────────
@@ -119,7 +205,7 @@ void drawHeader(int64_t now) {
 
     const ac::MoonInfo m = ac::moonAt(ac::localToUtc(now));
     const int mx = 572;
-    G->drawBitmap(mx - MOON_ICON / 2, 48 - MOON_ICON / 2, kMoonIcons[m.phase & 7], MOON_ICON, MOON_ICON, kBlack);
+    drawMoonIcon(mx, 48, 24, m.age / ac::kSynodicMonth);
     const int px = mx + 36, pw = W - 8 - px;
     printFit(px, 44, F_TEXT_B, ac::moonPhaseName(m.phase), pw);
     const int64_t nextFull = ac::nextMoonEvent(ac::localToUtc(now), true);
@@ -152,7 +238,7 @@ void drawWeatherBand(int64_t now) {
     const ac::DayInfo day = (di >= 0 && di < 3) ? w.day[di] : ac::DayInfo();
     const ac::WxKind kind = ac::kindFromWmo(day.wmo);
 
-    drawWeatherIcon(8, WX_Y + 6, kind);
+    drawWeatherIcon(12, WX_Y + 12, kind);
     char hi[12], lo[12], line[64];
     tempText(hi, sizeof(hi), day.tMax10);
     tempText(lo, sizeof(lo), day.tMin10);

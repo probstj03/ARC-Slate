@@ -149,23 +149,15 @@ void checkReminder(int64_t sec) {
     if (stage == 3 || stage == 1) flash();
 }
 
-// ── TC chain: time left, current temperature right ───────────────────────
+// ── TC chain: the time, centred ──────────────────────────────────────────
 
 void drawClock(int64_t sec) {
     const ac::Civil c = ac::fromSec(sec);
     char buf[12];
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d", c.hour, c.minute, c.second);
     uint8_t cols[56];
-    mtx::renderText(buf, cols, 56, 0);                       // HH:MM:SS = columns 0..38
-    // a vertical line at column 41 separates the temperature (columns 43..55, right-aligned, without the degree sign)
-    if (s_view.wxOk) {
-        char tt[8];
-        snprintf(tt, sizeof(tt), "%d", (int)lroundf(s_view.temp10 / 10.0f));
-        uint8_t tc[24];
-        const int w = mtx::renderText(tt, tc, sizeof(tc), 0);
-        if (w <= 13) cols[41] = 0x3E;                           // -10 and below need the space of the line
-        for (int k = 0; k < w && k < 16; k++) cols[56 - w + k] = tc[k];
-    }
+    const int used = mtx::renderText(buf, cols, 56, 0);
+    mtx::renderText(buf, cols, 56, (56 - used) / 2);         // centred
     mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
 }
 
@@ -203,6 +195,15 @@ void beginScroll() {
 void drawWeatherScene(uint32_t nowMs) {
     ac::WideCanvas cv;
     ac::drawWeatherWide(cv, s_view.wxOk ? ac::kindFromWmo(s_view.wmo) : ac::WxKind::Unknown, s_view.isDay, nowMs / 160);
+    // the current temperature sits in the scene on the right, in a cleared box (the scene passes behind it)
+    char tt[8];
+    if (s_view.wxOk) snprintf(tt, sizeof(tt), "%d^", (int)lroundf(s_view.temp10 / 10.0f));
+    else snprintf(tt, sizeof(tt), "--^");
+    uint8_t tc[24];
+    const int w = mtx::renderText(tt, tc, sizeof(tc), 0);
+    const int x0 = DATA_W - 1 - w;                          // one free column on the right
+    for (int x = x0 - 2; x < DATA_W; x++) cv.col[x] = 0;    // two free columns on the left
+    for (int k = 0; k < w; k++) cv.col[x0 + k] = tc[k];
     placeWide(cv.col);
 }
 
