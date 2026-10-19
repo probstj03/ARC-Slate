@@ -8,7 +8,6 @@ namespace epddrv {
 namespace {
 
 uint32_t s_spiHz = 2000000;
-Pause s_pause = Pause::PowerOn;
 Stats s_stats;
 
 // Busy waits of the refresh in progress: GxEPD2 calls the callback every ~5 ms while BUSY is active.
@@ -17,10 +16,6 @@ bool s_track = false;
 uint8_t s_waits = 0;
 uint32_t s_waitMs[6] = {0};
 uint32_t s_waitStart = 0, s_lastCall = 0;
-uint32_t s_resumeAt = 0;           // millis() at which the matrices come back on (0 = not paused)
-
-constexpr uint32_t POWER_ON_WINDOW_MS = 300;   // covers the booster start (~140 ms) with margin
-constexpr uint32_t MATRIX_OFF_DELAY_MS = 60;   // the matrix task needs a few ms to send the shutdown
 
 void busyCallback(const void*) {
     const uint32_t now = millis();
@@ -31,26 +26,11 @@ void busyCallback(const void*) {
         }
         s_waitMs[s_waits - 1] = now - s_waitStart;
         s_lastCall = now;
-        if (s_resumeAt && (int32_t)(now - s_resumeAt) >= 0) {
-            s_resumeAt = 0;
-            mtx::setEnabled(true);
-        }
     }
     // The panel can take seconds; give the bus to the LED matrices meanwhile.
     spibus::unlock();
     vTaskDelay(pdMS_TO_TICKS(5));
     spibus::lock();
-}
-
-// Switches the matrices off while the caller holds the SPI lock (the matrix task needs the bus for it).
-// Returns true if they were on.
-bool matricesOffLocked() {
-    if (!mtx::enabled()) return false;
-    mtx::setEnabled(false);
-    spibus::unlock();
-    vTaskDelay(pdMS_TO_TICKS(MATRIX_OFF_DELAY_MS));
-    spibus::lock();
-    return true;
 }
 
 // The booster gives up after ~2 s ("PowerOn" wait of 1.9..2.5 s without a long update after it), or the
@@ -66,35 +46,43 @@ bool looksFailed() {
     return timeoutLike;
 }
 
-bool s_suspended = false;      // after a booster failure: no more refreshes until resume() / restart
+// Hardware reset + init of the panel (caller holds the SPI lock). A short dip of the panel supply resets the
+// controller and loses its configuration (booster, waveform, resolution): later refreshes come out washed out or
+// distorted, or the panel ignores them. A reset before every full refresh makes each picture independent of that.
+void resetPanelLocked() {
+    Display& d = display();
+    d.init(115200, true, 20, false);            // initial = true: the next refresh writes the whole picture
+    d.epd2.setBusyCallback(busyCallback);
+    d.epd2.selectSPI(SPI, SPISettings(s_spiHz, MSBFIRST, SPI_MODE0));
+    spibus::setDrive(spibus::drive());
+}
 
-// One refresh with the configured matrix pause and a check that the panel really refreshed. On a booster failure
-// the panel is put to sleep and further refreshes are suspended: repeated attempts on a failing booster washed out
-// the picture that was already on the panel. A deep sleep + hardware reset did not clear the state in tests; it
-// needs a stronger supply (or the power removed for a moment).
+// One refresh (the matrices keep running) with a check that the panel really refreshed.
 template <typename F>
-bool guardedRefresh(F doRefresh, const char* what) {
-    if (s_suspended) return false;
-    const uint32_t t0 = millis();
-    s_stats.refreshes++;
-    const bool wasOn = s_pause != Pause::Off && matricesOffLocked();
-    s_resumeAt = (wasOn && s_pause == Pause::PowerOn) ? millis() + POWER_ON_WINDOW_MS : 0;
+bool runChecked(F doRefresh) {
     s_waits = 0;
     s_track = true;
     doRefresh();
     s_track = false;
-    if (wasOn) {
-        s_resumeAt = 0;
-        mtx::setEnabled(true);
+    return !looksFailed();
+}
+
+// Full refresh: reset first; if the panel still did not refresh, reset and try once more.
+bool fullRefreshLocked(const char* what) {
+    const uint32_t t0 = millis();
+    s_stats.refreshes++;
+    bool ok = false;
+    for (int attempt = 0; attempt < 2 && !ok; attempt++) {
+        resetPanelLocked();
+        ok = runChecked([] { display().display(false); });
+        if (!ok) {
+            s_stats.failures++;
+            Serial.printf("[EPD] %s: attempt %d - the panel did not refresh%s\n", what, attempt + 1,
+                          attempt == 0 ? ", resetting and trying again" : " - check the 3V3 supply of the panel");
+        }
     }
     s_stats.lastMs = millis() - t0;
-    if (!looksFailed()) return true;
-    s_stats.failures++;
-    s_suspended = true;
-    display().hibernate();
-    Serial.printf("[EPD] %s: the panel booster did not start (supply too weak) - e-ink refreshes suspended, "
-                  "the last picture stays. 'epdresume' or a restart tries again.\n", what);
-    return false;
+    return ok;
 }
 
 }  // namespace
@@ -115,32 +103,28 @@ void init() {
     d.epd2.setBusyCallback(busyCallback);
     d.setRotation(0);
     d.epd2.selectSPI(SPI, SPISettings(s_spiHz, MSBFIRST, SPI_MODE0));
+    spibus::setDrive(spibus::drive());
     spibus::unlock();
 }
 
-void setPause(Pause mode) { s_pause = mode; }
-Pause pause() { return s_pause; }
+bool refreshFull() { return fullRefreshLocked("full refresh"); }
 
-const char* pauseName(Pause mode) {
-    switch (mode) {
-        case Pause::Off: return "off";
-        case Pause::PowerOn: return "power-on (0.3 s)";
-        default: return "full refresh";
-    }
-}
-
-bool refreshFull() {
-    return guardedRefresh([] { display().display(false); }, "full refresh");
-}
-
+// A partial refresh needs the panel's previous picture, so no reset before it. If it fails, the panel has probably
+// lost its state: a full refresh (with reset) of the whole frame buffer repairs the picture.
 bool refreshWindow(int x, int y, int w, int h) {
-    return guardedRefresh([x, y, w, h] { display().displayWindow(x, y, w, h); }, "partial refresh");
+    const uint32_t t0 = millis();
+    s_stats.refreshes++;
+    if (runChecked([x, y, w, h] { display().displayWindow(x, y, w, h); })) {
+        s_stats.lastMs = millis() - t0;
+        return true;
+    }
+    s_stats.failures++;
+    Serial.println("[EPD] partial refresh: the panel did not refresh - full refresh with reset");
+    s_stats.refreshes--;                        // counted again by the full refresh
+    return fullRefreshLocked("full refresh after a failed partial");
 }
 
 Stats stats() { return s_stats; }
-
-void resume() { s_suspended = false; }
-bool suspended() { return s_suspended; }
 
 MatrixPause::MatrixPause(bool active) : _was(active && mtx::enabled()) {
     if (_was) {

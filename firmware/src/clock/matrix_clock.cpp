@@ -130,9 +130,6 @@ void drawClock(int64_t sec) {
     uint8_t cols[56];
     const int used = mtx::renderText(buf, cols, 56, 0);
     mtx::renderText(buf, cols, 56, used < 56 ? (56 - used) / 2 : 0);
-    // seconds bar in the free top row (bit 7): grows from left to right during the minute
-    const int lit = (c.second * 56) / 60 + 1;
-    for (int x = 0; x < lit && x < 56; x++) cols[x] |= 0x80;
     mtx::place(mtx::CHAIN_TC, cols, 56, 0, 7, false);
 }
 

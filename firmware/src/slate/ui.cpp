@@ -41,16 +41,18 @@ void IRAM_ATTR isrEncoder() {
 
 // ── menu model ────────────────────────────────────────────────────────────
 enum Item { IT_TAKE, IT_SHOT, IT_SCENE, IT_ROLL, IT_CAM, IT_MODE, IT_RATE, IT_BRIGHT, IT_FLASH, IT_APP, IT_INFO, IT_DONE, IT_COUNT };
-const char* const kItemNames[IT_COUNT] = {"Take", "Shot", "Scene", "Roll", "Camera", "Mode",
-                                          "Frame rate", "Brightness", "Test flash", "Clock mode", "Info", "Done"};
-const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "FPS", "BRT", "", "", "", ""};
+// The menu is shown on the LED matrices: the TC chain shows the item while browsing ("-TAKE-" style labels,
+// max. 9 characters = 56 columns) and the value while editing; the data chain keeps showing roll/shot/scene/take.
+const char* const kItemNames[IT_COUNT] = {"TAKE", "SHOT", "SCENE", "ROLL", "CAMERA", "MODE",
+                                          "FPS", "BRIGHT", "FLASH", "CLOCK", "INFO", "EXIT"};
+const char* const kOverlay[IT_COUNT] = {"TAKE", "SHOT", "SC", "ROLL", "CAM", "", "", "BRT", "", "", "IP", ""};
 
 using arc::engine::Mode;
 using arc::TcRate;
 const Mode kModes[] = {Mode::FreeRun, Mode::RecordRun, Mode::JamFree, Mode::JamRec, Mode::Slave};
-const char* const kModeNames[] = {"Free Run", "Record Run", "Jam -> Free", "Jam -> Rec", "Slave"};
+const char* const kModeNames[] = {"FREE RUN", "REC RUN", "JAM FREE", "JAM REC", "SLAVE"};
 const TcRate kRates[] = {TcRate::R24, TcRate::R25, TcRate::R2997DF, TcRate::R30};
-const char* const kRateNames[] = {"24", "25", "29.97 DF", "30"};
+const char* const kRateNames[] = {"24 FPS", "25 FPS", "29.97 DF", "30 FPS"};
 
 enum UiState { UI_IDLE, UI_MENU, UI_EDIT };
 UiState s_ui = UI_IDLE;
@@ -95,24 +97,13 @@ String valueText(int item) {
 }
 
 void renderMenu() {
-    MenuView v;
-    v.title = "ARC-SLATE MENU";
-    v.count = IT_COUNT;
-    for (int i = 0; i < IT_COUNT; i++) {
-        v.items[i] = kItemNames[i];
-        v.values[i] = valueText(i);
-    }
-    v.selected = s_sel;
-    v.editing = s_ui == UI_EDIT;
-    v.hint = v.editing ? "Drehen: Wert   Druecken: OK   Lang: Verwerfen"
-                       : "Drehen: Auswahl   Druecken: Aendern   Lang: Schliessen";
-    epd::showMenu(v);
-    if (s_ui == UI_EDIT && kOverlay[s_sel][0]) {
+    if (s_ui != UI_EDIT) {
+        // browsing: item name; the live value of take/shot/scene/roll is on the data chain anyway
+        mtx::showOverlay(String("-") + kItemNames[s_sel] + "-", 0);
+    } else if (kOverlay[s_sel][0]) {
         mtx::showOverlay(String(kOverlay[s_sel]) + " " + valueText(s_sel), 0);
-    } else if (s_ui == UI_EDIT && s_sel == IT_MODE) {
-        mtx::showOverlay(kModeNames[s_pendingIndex], 0);
     } else {
-        mtx::showOverlay("MENU", 0);
+        mtx::showOverlay(valueText(s_sel), 0);   // mode, frame rate
     }
 }
 
@@ -125,7 +116,6 @@ void openMenu() {
 void closeMenu() {
     s_ui = UI_IDLE;
     mtx::clearOverlay();
-    epd::closeMenu();
 }
 
 // Live value changes (take, scene, roll, camera, brightness).
@@ -210,7 +200,6 @@ void onShortPress() {
                 mtx::showOverlay("CLOCK", 0);
                 if (!bootsel::switchToOther()) mtx::showOverlay("CLOCK N/A", 2500);
                 return;
-            case IT_INFO: epd::requestStatus(); return;
             case IT_MODE: s_pendingIndex = indexOfMode(arc::engine::mode()); break;
             case IT_RATE: s_pendingIndex = indexOfRate(arc::engine::rate()); break;
             default: break;
@@ -306,8 +295,9 @@ void uiTask(void*) {
             if (s_ui != UI_IDLE) renderMenu();
         }
 
-        // Deferred slate card refresh (QR code) after take changes.
-        if (s_cardDueMs && (int32_t)(now - s_cardDueMs) >= 0) {
+        // Deferred slate card refresh (QR code) after take changes; not while the menu is open,
+        // so the e-ink does not flash on every value change (it follows when the menu closes).
+        if (s_cardDueMs && s_ui == UI_IDLE && (int32_t)(now - s_cardDueMs) >= 0) {
             s_cardDueMs = 0;
             epd::requestCard();
         }

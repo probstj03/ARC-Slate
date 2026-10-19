@@ -33,6 +33,7 @@ volatile uint8_t s_testMode = 0;
 portMUX_TYPE s_ovMux = portMUX_INITIALIZER_UNLOCKED;
 char s_overlay[24] = {0};
 uint32_t s_overlayUntil = 0;
+uint32_t s_overlayStart = 0;          // millis() of showOverlay (scroll position of long texts)
 bool s_overlayActive = false;
 
 // ── font: 5 columns per glyph, bit 6 = top row ──────────────────────────
@@ -154,10 +155,21 @@ void initChain(ChainHw& ch) {
     flush(ch, true);
 }
 
-void renderOverlay(const char* text) {
+void renderOverlay(const char* text, uint32_t elapsedMs) {
+    uint8_t wide[sizeof(s_overlay) * 6];
+    const int used = renderTextImpl(text, wide, sizeof(wide), 0, false);
     uint8_t cols[56];
-    const int used = renderTextImpl(text, cols, 56, 0, false);
-    renderTextImpl(text, cols, 56, used < 56 ? (56 - used) / 2 : 0, false);
+    if (used <= 56) {
+        renderTextImpl(text, cols, 56, (56 - used) / 2, false);
+    } else {
+        // marquee: the text enters on the right, leaves on the left, 25 columns per second
+        const int period = used + 56;
+        const int pos = (int)((elapsedMs / 40) % (uint32_t)period) - 56;   // first text column at the left edge
+        for (int x = 0; x < 56; x++) {
+            const int i = pos + x;
+            cols[x] = (i >= 0 && i < used) ? wide[i] : 0;
+        }
+    }
     placeColumnsImpl(s_chains[mtx::CHAIN_TC], cols, 56, 0, 7, false);
 }
 
@@ -217,8 +229,9 @@ void displayTask(void*) {
                 char text[sizeof(s_overlay)];
                 portENTER_CRITICAL(&s_ovMux);
                 memcpy(text, s_overlay, sizeof(text));
+                const uint32_t start = s_overlayStart;
                 portEXIT_CRITICAL(&s_ovMux);
-                renderOverlay(text);
+                renderOverlay(text, nowMs - start);
                 res.tcDirty = true;
             }
             if (s_renderer) s_renderer(nowMs, redraw, overlay, res);
@@ -288,7 +301,9 @@ bool enabled() { return s_enabled; }
 void showOverlay(const String& text, uint32_t durationMs) {
     char buf[sizeof(s_overlay)];
     strlcpy(buf, text.c_str(), sizeof(buf));
+    const uint32_t now = millis();
     portENTER_CRITICAL(&s_ovMux);
+    if (strcmp(s_overlay, buf) != 0 || !s_overlayActive) s_overlayStart = now;   // same text: keep scrolling
     memcpy(s_overlay, buf, sizeof(buf));
     s_overlayUntil = durationMs ? millis() + durationMs : 0;
     if (durationMs && s_overlayUntil == 0) s_overlayUntil = 1;

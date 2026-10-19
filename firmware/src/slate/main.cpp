@@ -71,7 +71,8 @@ void printHelp() {
         "  mtx 0|1|2        Matrix normal / alle LEDs / Modulnummern\n"
         "  epd              E-Ink neu zeichnen\n"
         "  epdtest          E-Ink Testbild | epdspi HZ  E-Ink-Takt setzen (Standard 2000000)\n"
-        "  epdpause 0|1|2   Matrix-Pause beim E-Ink-Refresh: aus / nur Booster-Start (Standard) / ganzer Refresh\n"
+        "  epdstats         E-Ink: Refreshes, Booster-Fehler, Dauer\n"
+        "  spidrive 0-3     Treiberstaerke SCK/MOSI (0 = schwach, weniger Ueberschwinger; Standard 0)\n"
         "  enc / encrev     Encoder-Debug / Drehrichtung umkehren\n"
         "  i2c              I2C-Scan\n"
         "  take N | scene N | shot X | roll A001 | bright 0-15\n"
@@ -196,21 +197,13 @@ void handleSerial() {
     else if (cmd == "epdtest") epd::requestTest();
     else if (cmd == "epdpins") epd::probePins();
     else if (cmd == "epdlab") epd::requestLab();
-    else if (cmd == "epdrecover") {
-        const int sp2 = arg.indexOf(' ');
-        const int sec = constrain((sp2 < 0 ? arg : arg.substring(0, sp2)).toInt(), 1, 60);
-        epd::recoveryTest(sec, arg.indexOf("wifioff") >= 0);
+    else if (cmd == "spidrive") {
+        if (arg.length()) { spibus::lock(); spibus::setDrive((uint8_t)constrain(arg.toInt(), 0, 3)); spibus::unlock(); }
+        Serial.printf("SPI drive strength (SCK/MOSI): %u  (0 weakest .. 3 strongest)\n", spibus::drive());
     }
-    else if (cmd == "epdresume") {
-        epddrv::resume();
-        Serial.println("E-ink refreshes allowed again");
-        epd::requestCard();
-    }
-    else if (cmd == "epdpause") {
-        if (arg.length()) epddrv::setPause((epddrv::Pause)constrain(arg.toInt(), 0, 2));
+    else if (cmd == "epdstats") {
         const epddrv::Stats st = epddrv::stats();
-        Serial.println(String("Matrix pause around e-ink refreshes: ") + epddrv::pauseName(epddrv::pause()) +
-                       "  (0 off, 1 power-on, 2 full) | refreshes " + st.refreshes + ", booster failures " + st.failures + (epddrv::suspended() ? " - SUSPENDED (epdresume)" : ""));
+        Serial.println(String("E-Ink: ") + st.refreshes + " refreshes, " + st.failures + " booster failures, last " + st.lastMs + " ms");
     }
     else if (cmd == "epdpartial") { epd::setPartial(arg.toInt() != 0); }
     else if (cmd == "epdspi") {

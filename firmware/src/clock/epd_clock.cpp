@@ -26,7 +26,7 @@ int64_t nowSec() { return arc::clock::nowNs() / 1000000000LL; }
 
 // ── refresh ──────────────────────────────────────────────────────────────
 
-void drawAll(int64_t now) {
+bool drawAll(int64_t now) {
     const String place = clockcfg::copy().place;
     epdlayout::Options opt;
     opt.place = place.c_str();
@@ -34,11 +34,13 @@ void drawAll(int64_t now) {
     spibus::lock();
     d.setFullWindow();
     epdlayout::draw(d, *s_snap, now, opt);
-    epddrv::refreshFull();                  // matrix pause, failure check and recovery: see epd_driver.h
+    const bool ok = epddrv::refreshFull();
     spibus::unlock();
+    return ok;
 }
 
-void doRefresh() {
+// Returns false if the panel did not refresh (then the day is not marked as done and the task retries).
+bool doRefresh() {
     clockdata::requestAll();
     clockdata::waitForFresh(60000);         // without network: the cached data is drawn
     if (!s_snap) s_snap = new clockdata::Data();
@@ -49,7 +51,10 @@ void doRefresh() {
     Serial.printf("[EPD] Aktualisierung (%u Termine, %d Aufgaben, Wetter %s)\n", (unsigned)s_snap->agenda.n, s_snap->taskCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
-    drawAll(now);
+    if (!drawAll(now)) {
+        Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch in 5 min");
+        return false;
+    }
     s_lastDay = ac::daysOf(now);
     s_lastRefreshSec = now;
     s_calRevDrawn = s_snap->src[clockdata::SRC_CALENDAR].revision;
@@ -58,14 +63,18 @@ void doRefresh() {
     s_prefs.putLong64("epdDay", s_lastDay);
     s_prefs.end();
     Serial.printf("[EPD] fertig in %lu ms\n", (unsigned long)(millis() - t0));
+    return true;
 }
 
 bool timePlausible() { return ac::fromSec(nowSec()).year >= 2024; }
 
 void epdTask(void*) {
+    bool bootDone = false;                  // one refresh after every start (date, data of today)
+    uint32_t retryAt = 0;                   // millis() of the next attempt after a failed refresh
     for (;;) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15000));
         if (!timePlausible()) continue;
+        if (retryAt && (int32_t)(millis() - retryAt) < 0 && !s_requested) continue;
         const ClockConfig cfg = clockcfg::copy();
         const int64_t now = nowSec();
         const int64_t today = ac::daysOf(now);
@@ -79,11 +88,15 @@ void epdTask(void*) {
             newEvents = clockdata::data().src[clockdata::SRC_CALENDAR].revision != s_calRevDrawn && clockdata::data().src[clockdata::SRC_CALENDAR].ok;
             clockdata::unlock();
         }
-        const bool wanted = s_requested || scheduled || neverDrawn || newEvents;
+        const bool afterBoot = !bootDone;
+        const bool wanted = s_requested || scheduled || neverDrawn || newEvents || afterBoot;
         if (!wanted) continue;
-        if (lid::open() && !s_forced && !neverDrawn) continue;      // do not flash the panel while the lid is open
+        // The daily refresh waits while the lid is open (no flashing in view); after a start, on request
+        // and when the panel was never drawn it runs right away.
+        if (lid::open() && !s_forced && !neverDrawn && !afterBoot && !s_requested) continue;
         s_requested = s_forced = false;
-        doRefresh();
+        bootDone = true;
+        retryAt = doRefresh() ? 0 : millis() + 5 * 60000;
     }
 }
 

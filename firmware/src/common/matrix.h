@@ -32,6 +32,7 @@ void setEnabled(bool on);            // false: modules in shutdown mode (dark, ~
 bool enabled();
 
 // Temporarily replaces the TC chain with a text (e.g. menu value), 0 = until cleared.
+// Texts wider than the chain (56 columns) scroll from right to left.
 void showOverlay(const String& text, uint32_t durationMs);
 void clearOverlay();
 

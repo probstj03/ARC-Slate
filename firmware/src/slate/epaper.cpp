@@ -8,7 +8,6 @@
 #include <Fonts/FreeSansOblique18pt7b.h>
 #include <qrcode.h>   // ESP-IDF esp_qrcode
 #include <ArcCore.h>
-#include <WiFi.h>
 #include "assets/bootscreen.h"
 #include "assets/logo.h"
 #include "pins.h"
@@ -28,13 +27,10 @@ constexpr int RIGHT_X = 344, RIGHT_W = W - RIGHT_X;
 constexpr int STATUS_Y = 448, STATUS_H = H - STATUS_Y;
 constexpr int PANEL_H = STATUS_Y - 4;       // right panel height (QR / menu)
 
-constexpr uint32_t BIT_CARD = 1, BIT_STATUS = 2, BIT_MENU = 4, BIT_CLOSE_MENU = 8, BIT_TEST = 16, BIT_LAB = 32;
+constexpr uint32_t BIT_CARD = 1, BIT_STATUS = 2, BIT_TEST = 16, BIT_LAB = 32;
 constexpr int PARTIALS_BEFORE_FULL = 25;    // full refresh against ghosting
 
 TaskHandle_t s_task = nullptr;
-SemaphoreHandle_t s_viewMtx = nullptr;
-MenuView s_menu;
-bool s_menuOpen = false;
 String (*s_statusProvider)() = nullptr;
 int s_partials = 0;
 
@@ -114,35 +110,6 @@ void drawRightPanelCard(const ShotInfo& s, const String& roll) {
     s_display.drawInvertedBitmap(RIGHT_X + (RIGHT_W - 170) / 2, 70, logo, 170, 170, GxEPD_BLACK);
     printCentered(RIGHT_X + RIGHT_W / 2, 300, &FreeSansBold18pt7b, "NO TAKE SELECTED");
     printCentered(RIGHT_X + RIGHT_W / 2, 336, &FreeSans9pt7b, "Load a project in ARC-Studio or pick a take with the encoder");
-}
-
-void drawMenuPanel(const MenuView& m) {
-    s_display.fillRect(RIGHT_X, 0, RIGHT_W, PANEL_H, GxEPD_WHITE);
-    s_display.fillRect(RIGHT_X, 0, RIGHT_W, 44, GxEPD_BLACK);
-    s_display.setTextColor(GxEPD_WHITE);
-    printAt(RIGHT_X + 14, 31, &FreeSansBold12pt7b, m.title);
-    s_display.setTextColor(GxEPD_BLACK);
-    const int rowH = 32, top = 54;
-    for (int i = 0; i < m.count; i++) {
-        const int y = top + i * rowH;
-        const bool sel = i == m.selected;
-        if (sel) {
-            if (m.editing) s_display.drawRect(RIGHT_X + 6, y, RIGHT_W - 12, rowH - 2, GxEPD_BLACK);
-            else s_display.fillRect(RIGHT_X + 6, y, RIGHT_W - 12, rowH - 2, GxEPD_BLACK);
-        }
-        s_display.setTextColor(sel && !m.editing ? GxEPD_WHITE : GxEPD_BLACK);
-        printAt(RIGHT_X + 16, y + 22, &FreeSansBold12pt7b, m.items[i]);
-        if (m.values[i].length()) {
-            int16_t bx, by; uint16_t bw, bh;
-            s_display.getTextBounds(m.values[i], 0, 0, &bx, &by, &bw, &bh);
-            const String v = (sel && m.editing) ? "< " + m.values[i] + " >" : m.values[i];
-            s_display.getTextBounds(v, 0, 0, &bx, &by, &bw, &bh);
-            s_display.setCursor(W - 20 - (int)bw, y + 22);
-            s_display.print(v);
-        }
-        s_display.setTextColor(GxEPD_BLACK);
-    }
-    if (m.hint.length()) printAt(RIGHT_X + 14, PANEL_H - 12, &FreeSans9pt7b, m.hint);
 }
 
 // Test picture for hardware debugging: border, diagonals, ruler, stripes, checkerboard, text.
@@ -277,26 +244,8 @@ void epdTask(void*) {
             continue;
         }
         spibus::lock();
-        if (bits & BIT_CLOSE_MENU) {
-            s_menuOpen = false;
-            bits |= BIT_CARD;
-        }
-        if (bits & BIT_MENU) {
-            xSemaphoreTake(s_viewMtx, portMAX_DELAY);
-            const MenuView m = s_menu;
-            xSemaphoreGive(s_viewMtx);
-            s_menuOpen = true;
-            drawMenuPanel(m);
-            if (bits & BIT_STATUS) drawStatus();
-            partial(RIGHT_X, 0, RIGHT_W, (bits & BIT_STATUS) ? H : PANEL_H);
-        } else if (bits & BIT_CARD) {
-            if (s_menuOpen) {
-                // Card data changed while the menu is open: draw it later.
-                drawStatus();
-                partial(0, STATUS_Y - 4, W, STATUS_H + 4);
-            } else {
-                renderCard();
-            }
+        if (bits & BIT_CARD) {
+            renderCard();
         } else if (bits & BIT_STATUS) {
             drawStatus();
             partial(0, STATUS_Y - 4, W, STATUS_H + 4);
@@ -310,8 +259,7 @@ void epdTask(void*) {
 namespace epd {
 
 void begin() {
-    s_viewMtx = xSemaphoreCreateMutex();
-    epddrv::init();           // the first picture is drawn by the task once the WiFi has settled
+    epddrv::init();          // the first picture is drawn by the task once the WiFi has settled
 }
 
 void startTask() {
@@ -320,15 +268,6 @@ void startTask() {
 
 void requestCard() { if (s_task) xTaskNotify(s_task, BIT_CARD, eSetBits); }
 void requestStatus() { if (s_task) xTaskNotify(s_task, BIT_STATUS, eSetBits); }
-
-void showMenu(const MenuView& view) {
-    xSemaphoreTake(s_viewMtx, portMAX_DELAY);
-    s_menu = view;
-    xSemaphoreGive(s_viewMtx);
-    if (s_task) xTaskNotify(s_task, BIT_MENU, eSetBits);
-}
-
-void closeMenu() { if (s_task) xTaskNotify(s_task, BIT_CLOSE_MENU, eSetBits); }
 
 void setPartial(bool on) {
     s_partialOk = on;
@@ -376,37 +315,3 @@ void probePins() {
 
 }  // namespace epd
 
-namespace epd {
-
-// Experiment for a panel stuck with a failing booster: deep sleep for `seconds`, optionally with the WiFi off
-// and the matrices dark, then one raw full refresh. The GxEPD2 log shows whether PowerOn is healthy again
-// (~140 ms) or still times out (~2040 ms).
-void recoveryTest(int seconds, bool wifiOff) {
-    epddrv::MatrixPause pause;
-    if (wifiOff) {
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_OFF);
-        Serial.println("[EPD] WiFi off for the test");
-    }
-    spibus::lock();
-    s_display.hibernate();
-    spibus::unlock();
-    Serial.printf("[EPD] panel in deep sleep for %d s ...\n", seconds);
-    vTaskDelay(pdMS_TO_TICKS(seconds * 1000));
-    spibus::lock();
-    s_display.setFullWindow();
-    s_display.fillScreen(GxEPD_WHITE);
-    s_display.setTextColor(GxEPD_BLACK);
-    printCentered(W / 2, 240, &FreeSansBold24pt7b, "RECOVERY TEST");
-    printCentered(W / 2, 290, &FreeSansBold12pt7b, String(seconds) + " s deep sleep" + (wifiOff ? ", WiFi off" : ""));
-    s_display.display(false);
-    spibus::unlock();
-    Serial.println("[EPD] recovery test done");
-    if (wifiOff) {
-        Serial.println("[EPD] restarting to bring the WiFi back");
-        delay(200);
-        ESP.restart();
-    }
-}
-
-}  // namespace epd
