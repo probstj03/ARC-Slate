@@ -141,10 +141,78 @@ void stamp(int64_t utc, char* out, size_t cap) {
     snprintf(out, cap, "%04d%02d%02dT%02d%02d%02dZ", c.year, c.month, c.day, c.hour, c.minute, c.second);
 }
 
+void feedString(const uint8_t* d, size_t n, void* c);
+
+// A configured path may be a single calendar (/remote.php/dav/calendars/<user>/<name>/), the calendar home
+// (/remote.php/dav/calendars/<user>/) or the principal (/remote.php/dav/principals/users/<user>/). The last two are
+// expanded with a PROPFIND (Depth 1) on the calendar home: every collection that is a calendar with events.
+int expandCalendars(const ClockConfig& cfg, const String in[], int nIn, String out[], int max, Print* log) {
+    int n = 0;
+    for (int i = 0; i < nIn && n < max; i++) {
+        String p = in[i];
+        p.trim();
+        if (!p.startsWith("/")) p = "/" + p;
+        if (!p.endsWith("/")) p += "/";
+        String home;
+        const int pr = p.indexOf("/principals/users/");
+        if (pr >= 0) {
+            home = p.substring(0, pr) + "/calendars/" + p.substring(pr + 18);
+        } else {
+            const int ca = p.indexOf("/calendars/");
+            if (ca >= 0) {
+                const String rest = p.substring(ca + 11);                     // "<user>/" or "<user>/<name>/"
+                const int slash = rest.indexOf('/');
+                if (slash == (int)rest.length() - 1) home = p;                // only the user: the home
+            }
+        }
+        if (home.isEmpty()) { out[n++] = p; continue; }
+
+        clockhttp::Request req;
+        req.method = "PROPFIND";
+        req.url = cfg.ncUrl + home;
+        req.user = cfg.ncUser;
+        req.pass = cfg.ncPass;
+        req.body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+                   "<d:prop><d:resourcetype/><c:supported-calendar-component-set/></d:prop></d:propfind>";
+        req.contentType = "application/xml; charset=utf-8";
+        req.depth = "1";
+        req.insecure = cfg.tlsInsecure;
+        String body;
+        body.reserve(4096);
+        const clockhttp::Result r = clockhttp::perform(req, feedString, &body);
+        if (r.status != 207) {
+            if (log) log->printf("  %s: Kalender-Suche FEHLER %s\n", home.c_str(), statusText(r.status, r.error));
+            out[n++] = p;                                                     // try it as it is
+            continue;
+        }
+        // one <d:response> per collection; namespace prefixes differ between servers, so search loosely
+        int pos = 0;
+        while (n < max) {
+            const int a = body.indexOf("response>", pos);
+            if (a < 0) break;
+            const int b = body.indexOf("response>", a + 9);
+            if (b < 0) break;
+            const String block = body.substring(a, b);
+            pos = b + 9;
+            const bool isCal = block.indexOf(":calendar/>") >= 0 || block.indexOf(":calendar />") >= 0;
+            const bool events = block.indexOf("VEVENT") >= 0;
+            const int h0 = block.indexOf("href>");
+            const int h1 = h0 >= 0 ? block.indexOf("<", h0 + 5) : -1;
+            if (!isCal || !events || h1 < 0) continue;
+            const String href = block.substring(h0 + 5, h1);
+            if (href.indexOf("/inbox/") >= 0 || href.indexOf("/outbox/") >= 0 || href.indexOf("/trashbin/") >= 0) continue;
+            out[n++] = href;
+            if (log) log->printf("  gefunden: %s\n", href.c_str());
+        }
+    }
+    return n;
+}
+
 bool fetchCalendar(Print* log) {
     const ClockConfig cfg = clockcfg::copy();
-    String cals[6];
-    const int n = clockcfg::calendarList(cfg, cals, 6);
+    String configured[6], cals[12];
+    const int nCfg = clockcfg::calendarList(cfg, configured, 6);
+    const int n = expandCalendars(cfg, configured, nCfg, cals, 12, log);
     const int64_t today = ac::dayStart(nowLocal());
     CalCtx ctx{today, today + 7 * 86400};
     char from[20], to[20];

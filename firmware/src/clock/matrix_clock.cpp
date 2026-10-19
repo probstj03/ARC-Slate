@@ -165,7 +165,7 @@ void drawClock(int64_t sec) {
 
 // ── data chain: a 24x24 square (3 rows of 3 modules) ─────────────────────
 // Rows from top to bottom: F_LEFT, F_MID (mounted rotated), F_RIGHT. The top two rows show the weather icon
-// (24x16, animated, assets/weather_icons_24x16.h), the bottom row the temperature.
+// (24x16, animated at 400 ms per frame; the sun stands still), the bottom row the temperature.
 
 void putRow(const ac::Canvas& cv, int row) {
     static const int first[3] = {F_LEFT, F_MID, F_RIGHT};
@@ -181,7 +181,7 @@ Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
     switch (k) {
         case ac::WxKind::Clear:
             if (windy) return {anim16_wind, ANIM16_WIND_LEN};
-            return day ? Anim{anim16_sunny, ANIM16_SUNNY_LEN} : Anim{anim16_clear_night, ANIM16_CLEAR_NIGHT_LEN};
+            return day ? Anim{anim16_sunny, 1} : Anim{anim16_clear_night, ANIM16_CLEAR_NIGHT_LEN};   // the sun stands still
         case ac::WxKind::PartlyCloudy:
             return day ? Anim{anim16_partly_cloudy, ANIM16_PARTLY_CLOUDY_LEN}
                        : Anim{anim16_partly_cloudy_night, ANIM16_PARTLY_CLOUDY_NIGHT_LEN};
@@ -340,9 +340,9 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
         }
     }
 
-    // data chain: weather icon (about 4.5 frames per second) and temperature
+    // data chain: weather icon (2.5 frames per second, calm) and temperature
     const Anim a = animFor(s_view.wxOk, s_view.wmo, s_view.isDay, s_view.wind);
-    const uint32_t frame = nowMs / 220;
+    const uint32_t frame = nowMs / 400;
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
         if (a.len) {
