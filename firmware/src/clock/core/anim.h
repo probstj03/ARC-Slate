@@ -41,6 +41,12 @@ void drawMoon(Canvas& c, int x0, double phaseFrac);
 // Sunrise (rise = true) or sunset icon; `t` = frames since the icon appeared (animates once).
 void drawSunEvent(Canvas& c, bool rise, uint32_t t);
 
+// Night icon 24x16 (3 bytes per row, MSB left) for the matrix: `base` (clouds, may be null), the moon of the real phase
+// (8x8 at column moonX, top rows; lit on the right when waxing) and permanent stars that never go out. A star grows
+// into a cross now and then, one after another and slowly (about 4 s per step); nowMs drives that only.
+void composeNightIcon(uint8_t out[48], const uint8_t* base, int moonX, const int8_t (*stars)[2], int starN,
+                      double phaseFrac, uint32_t nowMs);
+
 // Plain-text dump for tests / debugging: '#' lit, '.' dark, 8 lines.
 void dump(const Canvas& c, char* out, int cap);
 

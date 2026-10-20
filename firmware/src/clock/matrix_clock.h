@@ -12,6 +12,8 @@ namespace clockmatrix {
 void begin();                              // registers the renderer
 void scroll(const String& text);           // scrolls a message over the data chain
 void sparkle(uint32_t durationMs);         // short sparkle effect on all modules
+// Shows a chosen weather (WMO code, wind in km/h), day or night and moon phase (0..1, < 0: the real one) for a while.
+void testWeather(uint8_t wmo, uint8_t windKmh, bool night, double phase, uint32_t durationMs);
 void showNext();                           // button: scrolls the next event of today
 void adjustBrightness(int delta);          // encoder: changes the day or night brightness
 bool isNight();

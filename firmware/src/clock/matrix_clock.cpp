@@ -6,6 +6,7 @@
 #include "assets/weather_icons_night.h"
 #include "core/anim.h"
 #include "core/civil.h"
+#include "core/moon.h"
 #include "daylight.h"
 #include "data_store.h"
 #include "matrix.h"
@@ -19,12 +20,19 @@ struct View {
     int16_t temp10 = 0;
     uint8_t wmo = 0, wind = 0;
     bool isDay = true;
+    double moonPhase = 0;                  // age / synodic month: 0 new, 0.5 full
     int64_t sunrise = 0, sunset = 0;       // of today, local seconds (0 = unknown)
     bool haveNext = false, nextOngoing = false;
     ac::Event next;
 };
 
 View s_view;
+
+// serial test (`wxtest`): shows a chosen weather / night / moon phase for a while instead of the real one
+volatile uint32_t s_testUntil = 0;
+uint8_t s_testWmo = 0, s_testWind = 0;
+bool s_testNight = false;
+double s_testPhase = -1;                   // < 0: the real phase
 
 // field layout of the data chain (the same as the slate: matrix_slate.cpp); the middle row is mounted rotated
 constexpr int F_LEFT = 0, F_MID = 3, F_RIGHT = 6;
@@ -76,6 +84,14 @@ void refreshView(int64_t sec) {
         v.next = d.agenda.ev[n];
     }
     clockdata::unlock();
+    v.moonPhase = ac::moonAt(ac::localToUtc(sec)).age / ac::kSynodicMonth;
+    if ((int32_t)(s_testUntil - millis()) > 0) {
+        v.wxOk = true;
+        v.wmo = s_testWmo;
+        v.wind = s_testWind;
+        v.isDay = !s_testNight;
+        if (s_testPhase >= 0) v.moonPhase = s_testPhase;
+    }
     s_view = v;
 }
 
@@ -173,28 +189,35 @@ void putRow(const ac::Canvas& cv, int row) {
     mtx::place(mtx::CHAIN_DATA, cv.col, ac::kFieldW, first[row], 3, row == 1);
 }
 
-struct Anim { const uint8_t* const* frames; int len; };
+// Night icons: the clouds come as frames, moon (real phase) and stars are added by ac::composeNightIcon.
+struct NightSpec { int moonX; const int8_t (*stars)[2]; int starN; };
+const NightSpec kNightClear = {NIGHT_CLEAR_MOON_X, night_clear_stars, NIGHT_CLEAR_STAR_N};
+const NightSpec kNightHeiter = {NIGHT_HEITER_MOON_X, night_heiter_stars, NIGHT_HEITER_STAR_N};
+
+struct Anim { const uint8_t* const* frames; int len; const NightSpec* night; };
 
 Anim animFor(bool wxOk, uint8_t wmo, bool day, uint8_t windKmh) {
-    if (!wxOk) return {nullptr, 0};
+    if (!wxOk) return {nullptr, 0, nullptr};
     const ac::WxKind k = ac::kindFromWmo(wmo);
     const bool windy = windKmh >= 40;
     switch (k) {
         case ac::WxKind::Clear:
-            if (windy) return {anim16_wind, ANIM16_WIND_LEN};
-            return day ? Anim{anim16_sunny, 1} : Anim{anim16_clear_night_still, ANIM16_CLEAR_NIGHT_STILL_LEN};   // the sun stands still
+            if (windy) return {anim16_wind, ANIM16_WIND_LEN, nullptr};
+            return day ? Anim{anim16_sunny, 1, nullptr}                                   // the sun stands still
+                       : Anim{anim16_clear_night_base, ANIM16_CLEAR_NIGHT_BASE_LEN, &kNightClear};
         case ac::WxKind::PartlyCloudy:
-            return day ? Anim{anim16_heiter, ANIM16_HEITER_LEN} : Anim{anim16_heiter_nacht_still, ANIM16_HEITER_NACHT_STILL_LEN};
+            return day ? Anim{anim16_heiter, ANIM16_HEITER_LEN, nullptr}
+                       : Anim{anim16_heiter_nacht_base, ANIM16_HEITER_NACHT_BASE_LEN, &kNightHeiter};
         case ac::WxKind::Cloudy:
-            if (windy) return {anim16_wind, ANIM16_WIND_LEN};
-            return {anim16_cloudy, ANIM16_CLOUDY_LEN};
-        case ac::WxKind::Fog: return {anim16_fog, ANIM16_FOG_LEN};
+            if (windy) return {anim16_wind, ANIM16_WIND_LEN, nullptr};
+            return {anim16_cloudy, ANIM16_CLOUDY_LEN, nullptr};
+        case ac::WxKind::Fog: return {anim16_fog, ANIM16_FOG_LEN, nullptr};
         case ac::WxKind::Drizzle:
-        case ac::WxKind::Showers: return {anim16_rain, ANIM16_RAIN_LEN};
-        case ac::WxKind::Rain: return {anim16_heavy_rain, ANIM16_HEAVY_RAIN_LEN};
-        case ac::WxKind::Snow: return {anim16_snow, ANIM16_SNOW_LEN};
-        case ac::WxKind::Thunder: return {anim16_thunderstorm, ANIM16_THUNDERSTORM_LEN};
-        default: return {nullptr, 0};
+        case ac::WxKind::Showers: return {anim16_rain, ANIM16_RAIN_LEN, nullptr};
+        case ac::WxKind::Rain: return {anim16_heavy_rain, ANIM16_HEAVY_RAIN_LEN, nullptr};
+        case ac::WxKind::Snow: return {anim16_snow, ANIM16_SNOW_LEN, nullptr};
+        case ac::WxKind::Thunder: return {anim16_thunderstorm, ANIM16_THUNDERSTORM_LEN, nullptr};
+        default: return {nullptr, 0, nullptr};
     }
 }
 
@@ -347,7 +370,13 @@ void render(uint32_t nowMs, bool redraw, bool tcOwned, mtx::Result& out) {
     if (redraw || frame != lastFrame) {
         lastFrame = frame;
         if (a.len) {
-            drawIcon(a.frames[frame % (uint32_t)a.len]);
+            const uint8_t* bmp = a.frames[frame % (uint32_t)a.len];
+            uint8_t night[48];
+            if (a.night) {                               // night: the moon of today's phase and the stars on the clouds
+                ac::composeNightIcon(night, bmp, a.night->moonX, a.night->stars, a.night->starN, s_view.moonPhase, nowMs);
+                bmp = night;
+            }
+            drawIcon(bmp);
         } else {                                         // no weather yet: a dot runs along
             ac::Canvas top;
             top.set((int)(frame % 24), 4);
@@ -377,6 +406,14 @@ void begin() {
 void scroll(const String& text) { startScrollText(text.c_str(), 1); }
 
 void sparkle(uint32_t durationMs) { s_sparkleUntil = millis() + durationMs; }
+
+void testWeather(uint8_t wmo, uint8_t windKmh, bool night, double phase, uint32_t durationMs) {
+    s_testWmo = wmo;
+    s_testWind = windKmh;
+    s_testNight = night;
+    s_testPhase = phase;
+    s_testUntil = millis() + durationMs;
+}
 
 void showNext() { s_showNext = true; }
 

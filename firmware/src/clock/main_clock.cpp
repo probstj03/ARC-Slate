@@ -254,6 +254,34 @@ void handleSerial() {
     }
     else if (cmd == "n") { arc::net::requestNtpSync(); Serial.println("NTP-Sync angefordert"); }
     else if (cmd == "sqw") detectSqwEdge();
+    else if (cmd == "wxtest") {
+        // wxtest KIND [night] [PHASE 0..1]: shows that weather on the matrix for 60 s
+        struct Kind { const char* name; uint8_t wmo, wind; };
+        static const Kind kinds[] = {{"clear", 0, 0}, {"heiter", 2, 0}, {"cloudy", 3, 0}, {"fog", 45, 0}, {"drizzle", 51, 0},
+                                     {"rain", 63, 0}, {"showers", 80, 0}, {"snow", 73, 0}, {"thunder", 95, 0}, {"wind", 0, 50}};
+        String rest = arg;
+        rest.trim();
+        rest.toLowerCase();
+        const int sp = rest.indexOf(' ');
+        const String name = sp < 0 ? rest : rest.substring(0, sp);
+        bool night = false;
+        double phase = -1;
+        for (int i = sp; i >= 0 && i < (int)rest.length();) {
+            const int next = rest.indexOf(' ', i + 1);
+            String w = rest.substring(i + 1, next < 0 ? rest.length() : next);
+            w.trim();
+            if (w == "night") night = true;
+            else if (w.length()) phase = constrain(w.toFloat(), 0.0f, 1.0f);
+            i = next;
+        }
+        const Kind* k = nullptr;
+        for (const Kind& c : kinds) if (name == c.name) k = &c;
+        if (!k) Serial.println("wxtest clear|heiter|cloudy|fog|drizzle|rain|showers|snow|thunder|wind [night] [PHASE 0..1]");
+        else {
+            clockmatrix::testWeather(k->wmo, k->wind, night, phase, 60000);
+            Serial.printf("wxtest: %s%s, Mondphase %s, 60 s\n", k->name, night ? " (Nacht)" : "", phase < 0 ? "echt" : String(phase, 2).c_str());
+        }
+    }
     else if (cmd == "scroll") clockmatrix::scroll(arg.isEmpty() ? String("ARC CLOCK TEST") : arg);
     else if (cmd == "sparkle") clockmatrix::sparkle(1500);
     else if (cmd == "mtx") mtx::setTestMode((uint8_t)arg.toInt());

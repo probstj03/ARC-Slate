@@ -23,7 +23,14 @@ MoonInfo moonAt(int64_t utcSec) {
     m.age = ageAt(utcSec);
     const double frac = m.age / kSynodicMonth;
     m.illum = (1.0 - cos(2.0 * kPi * frac)) / 2.0;
-    m.phase = (int)floor(frac * 8.0 + 0.5) % 8;
+    // Phase name from the lit fraction, so that it fits the picture (an octant by age called a 68 % moon "first
+    // quarter"): new < 6 %, crescent < 38 %, quarter < 62 %, gibbous < 94 %, full above; waxing in the first half.
+    const bool waxing = frac < 0.5;
+    if (m.illum < 0.06) m.phase = 0;
+    else if (m.illum >= 0.94) m.phase = 4;
+    else if (m.illum < 0.38) m.phase = waxing ? 1 : 7;
+    else if (m.illum < 0.62) m.phase = waxing ? 2 : 6;
+    else m.phase = waxing ? 3 : 5;
     return m;
 }
 

@@ -21,9 +21,15 @@ struct Agenda {
     int nextTimed(int64_t now, bool& ongoing) const;
     // Number of events (incl. all-day) overlapping the given local day.
     int countOnDay(int64_t dayStart) const;
+    // Is there a timed event on one of the `days` days from `today` (local midnight) that counts as night?
+    bool hasNightEvents(int64_t today, int days, int fromH, int toH) const;
     // Hash of what is shown (change detection).
     uint32_t hash() const;
 };
+
+// A timed (not all-day) event of the local day `day` that starts before fromH or at / after toH o'clock. The start is
+// clipped to the day: an event that continues past midnight counts at 00:00 of the next day.
+bool isNightEvent(const Event& e, int64_t day, int fromH, int toH);
 
 // "Today", "Tomorrow", otherwise "Mon 13.10."
 void dayLabel(int64_t day, int64_t today, char* out, size_t cap);

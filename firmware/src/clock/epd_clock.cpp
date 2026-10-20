@@ -15,6 +15,7 @@ epddrv::Display& d = epddrv::display();
 
 constexpr int64_t CHECK_EVERY_SEC = 15 * 60;       // look for changes every 15 minutes
 constexpr int64_t LID_DEFER_MAX_SEC = 2 * 3600;    // a change waits at most this long for the lid to close
+constexpr int QUIET_FROM_MIN = 22 * 60;            // night rest: from 22:00 until the daily refresh
 
 clockdata::Data* s_snap = nullptr;          // copy of the data for one drawing pass
 ac::Weather* s_wx = nullptr;                // weather as of the morning refresh (frozen during the day)
@@ -26,6 +27,7 @@ int64_t s_lastRefreshSec = 0;
 int64_t s_nextCheckSec = 0;
 int64_t s_pendingSince = 0;                 // a change waits for the lid since then (0 = none)
 uint32_t s_refreshCount = 0, s_checkCount = 0;
+bool s_quietLogged = false;
 Preferences s_prefs;
 
 int64_t nowSec() { return arc::clock::nowNs() / 1000000000LL; }
@@ -152,6 +154,18 @@ void epdTask(void*) {
             s_pendingSince = 0;
             continue;                           // nothing changed: the panel stays untouched
         }
+        // Night rest: from 22:00 until the time of the daily refresh a change is not drawn - unless there are events at
+        // night. It is picked up by the daily refresh (the date at the top then changes at that time, not at midnight).
+        const int dailyMin = cfg.epdHour * 60 + cfg.epdMinute;
+        if (dailyMin < QUIET_FROM_MIN && (minutes >= QUIET_FROM_MIN || minutes < dailyMin) &&
+            !epdlayout::hasNightEvents(*s_snap, now)) {
+            if (!s_quietLogged) {
+                Serial.printf("[EPD] Nachtruhe: Aenderungen warten bis %02d:%02d\n", cfg.epdHour, cfg.epdMinute);
+                s_quietLogged = true;
+            }
+            continue;
+        }
+        s_quietLogged = false;
         // A change. With the lid open the refresh (black/white flashing) waits, but not forever.
         if (lid::open()) {
             if (!s_pendingSince) s_pendingSince = now;

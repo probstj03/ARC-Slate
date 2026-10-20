@@ -89,6 +89,30 @@ static void testFold() {
     CHECK_STR(small, "abcdefg");                                          // truncated, terminated
 }
 
+static void testNightEvents() {
+    const int64_t today = L(2026, 10, 12);
+    Agenda a;
+    auto timed = [&](int64_t s, int64_t e) { Event ev; ev.start = s; ev.end = e; return ev; };
+    a.add(timed(L(2026, 10, 12, 9, 0), L(2026, 10, 12, 10, 0)), today, today + 7 * 86400);
+    a.add(timed(L(2026, 10, 12, 20, 0), L(2026, 10, 12, 21, 0)), today, today + 7 * 86400);     // ends at 21:00: still day
+    a.finalize();
+    CHECK(!a.hasNightEvents(today, 2, 7, 21));
+    Event late = timed(L(2026, 10, 12, 21, 0), L(2026, 10, 12, 22, 0));                        // starts at 21:00: night
+    CHECK(isNightEvent(late, today, 7, 21));
+    Event early = timed(L(2026, 10, 13, 5, 45), L(2026, 10, 13, 7, 30));                       // starts before 7:00: night (tomorrow)
+    CHECK(isNightEvent(early, today + 86400, 7, 21));
+    CHECK(!isNightEvent(early, today, 7, 21));                                                  // not on today
+    Event over = timed(L(2026, 10, 12, 22, 0), L(2026, 10, 13, 2, 0));                          // over midnight: night on both days
+    CHECK(isNightEvent(over, today, 7, 21) && isNightEvent(over, today + 86400, 7, 21));
+    Event allDay = timed(today, today + 86400);
+    allDay.allDay = true;
+    CHECK(!isNightEvent(allDay, today, 7, 21));
+    a.add(early, today, today + 7 * 86400);
+    a.finalize();
+    CHECK(a.hasNightEvents(today, 2, 7, 21));
+    CHECK(!a.hasNightEvents(today, 1, 7, 21));                                                  // only today looked at
+}
+
 static void testMoon() {
     // Full moon 2025-10-07 03:47 UTC, new moon 2025-10-21 12:25 UTC (mean-cycle accuracy: ±1 day).
     const int64_t full = daysFromCivil(2025, 10, 7) * 86400 + 3 * 3600 + 47 * 60;
@@ -106,6 +130,11 @@ static void testMoon() {
     const int64_t nf = nextMoonEvent(nm + 3600, true);
     CHECK(nf - nm > 14 * 86400 && nf - nm < 16 * 86400);
     CHECK_STR(moonPhaseName(4), "Full moon");
+    // 2026-10-20 (new moon 10.10., full moon 26.10.): waxing gibbous, about three quarters lit
+    MoonInfo t = moonAt(daysFromCivil(2026, 10, 20) * 86400 + 12 * 3600);
+    CHECK(t.phase == 3);
+    CHECK(t.age / kSynodicMonth < 0.5);                       // waxing: the lit side is on the right
+    CHECK(t.illum > 0.6 && t.illum < 0.9);
 }
 
 // ── iCalendar / CalDAV ───────────────────────────────────────────────────
@@ -458,6 +487,7 @@ int main() {
     testCivil();
     testFold();
     testMoon();
+    testNightEvents();
     testCalDav();
     testTodo();
     testAgenda();

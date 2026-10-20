@@ -33,17 +33,23 @@ void busyCallback(const void*) {
     spibus::lock();
 }
 
-// The booster gives up after ~2 s ("PowerOn" wait of 1.9..2.5 s without a long update after it), or the
-// panel does not answer at all (no busy phase). A healthy full refresh has a wait of 3.5-5.5 s, a partial
-// one 1.5-1.7 s.
+// What a refresh looks like in the busy waits (GxEPD2 calls the callback while BUSY is active):
+//   healthy full refresh  PowerOn ~0.14 s, update 3.5-5.5 s, PowerOff ~0.04 s; a partial one has a wait of 1.5-1.7 s
+//   booster gives up      a "PowerOn" wait of 1.9..2.5 s without a long update after it
+//   BUSY stuck            a wait of ~10 s: GxEPD2's own busy timeout, the refresh did not happen
+//   panel not answering   no wait at all, or only waits of a few ms: BUSY idle at once, nothing was refreshed
 bool looksFailed() {
     if (s_waits == 0) return true;
-    bool timeoutLike = false;
+    uint32_t longest = 0;
+    bool boosterLike = false;
     for (uint8_t i = 0; i < s_waits; i++) {
-        if (s_waitMs[i] > 2500) return false;                     // a real full update ran
-        if (s_waitMs[i] >= 1900) timeoutLike = true;
+        if (s_waitMs[i] >= 9800) return true;
+        if (s_waitMs[i] > longest) longest = s_waitMs[i];
+        if (s_waitMs[i] >= 1900 && s_waitMs[i] <= 2500) boosterLike = true;
     }
-    return timeoutLike;
+    if (longest > 2500) return false;              // a real full update ran
+    if (boosterLike) return true;
+    return longest < 1000;                         // no update phase at all
 }
 
 // Hardware reset + init of the panel (caller holds the SPI lock). A short dip of the panel supply resets the
@@ -78,7 +84,7 @@ bool fullRefreshLocked(const char* what) {
         if (!ok) {
             s_stats.failures++;
             Serial.printf("[EPD] %s: attempt %d - the panel did not refresh%s\n", what, attempt + 1,
-                          attempt == 0 ? ", resetting and trying again" : " - check the 3V3 supply of the panel");
+                          attempt == 0 ? ", resetting and trying again" : " - check the 3V3 supply and the BUSY wire of the panel");
         }
     }
     s_stats.lastMs = millis() - t0;

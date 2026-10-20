@@ -8,7 +8,8 @@
 //  - the weather on the panel is the forecast of the daily refresh (default 05:30) and does not change during
 //    the day, so weather updates never trigger a refresh;
 //  - once after every start (the slate firmware may have drawn the panel) and on request;
-//  - with the lid open a change waits until it closes (at most 2 h).
+//  - with the lid open a change waits until it closes (at most 2 h);
+//  - night rest: from 22:00 until the daily refresh nothing is redrawn unless there are events at night.
 #include <Arduino.h>
 
 namespace epdclock {

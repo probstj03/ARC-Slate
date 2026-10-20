@@ -94,9 +94,9 @@ static void onTask(const Task& t, void*) { if (g_data->taskCount < clockdata::kM
 
 int main(int argc, char** argv) {
     const char* out = argc > 1 ? argv[1] : "epd_preview.pgm";
-    const int variant = argc > 2 ? atoi(argv[2]) : 0;      // 0 normal, 1 empty/offline, 2 busy night/snow
+    const int variant = argc > 2 ? atoi(argv[2]) : 0;      // 0 normal, 1 empty/offline, 2 busy night/snow, 3 night events, 4 waxing gibbous moon
 
-    const int64_t now = L(2026, 10, 12, 5, 30);
+    const int64_t now = variant == 4 ? L(2026, 10, 20, 5, 30) : L(2026, 10, 12, 5, 30);
     const int64_t today = dayStart(now);
     clockdata::Data* data = new clockdata::Data();
     g_data = data;
@@ -113,6 +113,10 @@ int main(int argc, char** argv) {
         a.add(ev(L(2026, 10, 16, 19, 0), L(2026, 10, 16, 22, 0), false, "Kino mit Freunden"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 17, 10, 0), L(2026, 10, 17, 11, 0), false, "Frühstück"), today, today + 7 * 86400);
         a.add(ev(L(2026, 10, 18, 10, 0), L(2026, 10, 18, 11, 0), false, "Sonntagsspaziergang"), today, today + 7 * 86400);
+        if (variant == 3) {                      // events at night: the night strip appears
+            a.add(ev(L(2026, 10, 12, 22, 30), L(2026, 10, 12, 23, 30), false, "Nachtschicht Schnitt"), today, today + 7 * 86400);
+            a.add(ev(L(2026, 10, 13, 5, 45), L(2026, 10, 13, 7, 0), false, "Flug nach Hamburg"), today, today + 7 * 86400);
+        }
         a.finalize();
         data->src[clockdata::SRC_CALENDAR].ok = true;
         data->src[clockdata::SRC_CALENDAR].at = now - 60;

@@ -56,6 +56,21 @@ int Agenda::countOnDay(int64_t day) const {
     return c;
 }
 
+bool isNightEvent(const Event& e, int64_t day, int fromH, int toH) {
+    if (e.allDay) return false;
+    const int64_t end = e.end > e.start ? e.end : e.start + 1800;
+    if (!(e.start < day + 86400 && end > day)) return false;
+    const int m = (int)((e.start > day ? e.start - day : 0) / 60);
+    return m < fromH * 60 || m >= toH * 60;
+}
+
+bool Agenda::hasNightEvents(int64_t today, int days, int fromH, int toH) const {
+    for (int d = 0; d < days; d++)
+        for (int i = 0; i < n; i++)
+            if (isNightEvent(ev[i], today + d * 86400LL, fromH, toH)) return true;
+    return false;
+}
+
 uint32_t Agenda::hash() const {
     uint32_t h = 2166136261u;
     auto mix = [&h](const void* p, size_t len) {

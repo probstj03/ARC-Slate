@@ -325,6 +325,28 @@ void drawWeatherWide(WideCanvas& c, WxKind kind, bool day, uint32_t frame) {
     }
 }
 
+void composeNightIcon(uint8_t out[48], const uint8_t* base, int moonX, const int8_t (*stars)[2], int starN,
+                      double phaseFrac, uint32_t nowMs) {
+    if (base) memcpy(out, base, 48); else memset(out, 0, 48);
+    auto set = [&](int x, int y) {
+        if (x >= 0 && x < 24 && y >= 0 && y < 16) out[y * 3 + x / 8] |= (uint8_t)(0x80 >> (x % 8));
+    };
+    Canvas m;
+    drawMoon(m, moonX, phaseFrac);
+    for (int x = 0; x < 24; x++)
+        for (int y = 0; y < 8; y++)
+            if (m.col[x] & (0x80 >> y)) set(x, y);
+    for (int k = 0; k < starN; k++) {
+        const int x = stars[k][0], y = stars[k][1];
+        set(x, y);                                                    // a star never goes out
+        const int half = y < 8 ? 0 : 8;                               // the arms stay in the same half (gap between rows 7 and 8)
+        const bool room = x > 0 && x < 23 && y > half && y < half + 7 && !(y < 8 && x >= moonX - 2 && x <= moonX + 9);
+        if (room && ((nowMs / 4000 + (uint32_t)k) % 3) == 0) {
+            set(x - 1, y); set(x + 1, y); set(x, y - 1); set(x, y + 1);
+        }
+    }
+}
+
 void dump(const Canvas& c, char* out, int cap) {
     int n = 0;
     for (int y = 0; y < kFieldH && n + kFieldW + 2 < cap; y++) {

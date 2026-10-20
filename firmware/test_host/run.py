@@ -76,7 +76,8 @@ def run_preview():
     except ImportError:
         Image = None
         print("Pillow fehlt: es bleiben nur .pgm-Dateien (pip install pillow)")
-    for variant, name in ((0, "epd_preview"), (1, "epd_preview_offline"), (2, "epd_preview_snow")):
+    for variant, name in ((0, "epd_preview"), (1, "epd_preview_offline"), (2, "epd_preview_snow"), (3, "epd_preview_night"),
+                          (4, "epd_preview_moon")):
         pgm = os.path.join(OUT, name + ".pgm")
         if subprocess.call([exe("render_epd"), pgm, str(variant)]) != 0:
             sys.exit(1)
