@@ -7,6 +7,7 @@
 #include "../core/moon.h"
 #include "../fonts/Lato10pt.h"
 #include "../fonts/Lato12pt.h"
+#include "../fonts/LatoBold10pt.h"
 #include "../fonts/LatoBold12pt.h"
 #include "../fonts/LatoBold16pt.h"
 #include "../fonts/LatoBold20pt.h"
@@ -27,13 +28,14 @@ namespace {
 constexpr uint16_t kBlack = 0x0000, kWhite = 0xFFFF;
 
 constexpr int HEADER_H = 96;
-constexpr int WX_Y = 100, WX_H = 96;
-constexpr int BODY_Y = 206, BODY_BOTTOM = 476;
+constexpr int WX_Y = 100, WX_H = 78;      // weather band: it ends flush with the sunrise / sunset line
+constexpr int BODY_Y = WX_Y + WX_H + 4, BODY_BOTTOM = 476;
 constexpr int SEP_X = 440;
-constexpr int BAR_H = 32;                 // black heading bars
-constexpr int ROW_H = 30;
+constexpr int BAR_H = 26;                 // black heading bars
+constexpr int ROW_H = 26;                 // dashboard rows
 
 const GFXfont* const F_SMALL = &Lato10pt;
+const GFXfont* const F_SMALL_B = &LatoBold10pt;
 const GFXfont* const F_TEXT = &Lato12pt;
 const GFXfont* const F_TEXT_B = &LatoBold12pt;
 const GFXfont* const F_HEAD = &LatoBold16pt;
@@ -90,11 +92,9 @@ void printFit(int x, int y, const GFXfont* font, const char* text, int maxW) {
 void headingBar(int x, int y, int w, const char* title) {
     G->fillRect(x, y, w, BAR_H, kBlack);
     G->setTextColor(kWhite);
-    printAt(x + 10, y + 25, F_HEAD, title);
+    printAt(x + 10, y + 19, F_TEXT_B, title);
     G->setTextColor(kBlack);
 }
-
-void thickLine(int y) { G->fillRect(0, y, epdlayout::W, 4, kBlack); }
 
 // ── icons ────────────────────────────────────────────────────────────────
 
@@ -220,7 +220,7 @@ void drawHeader(int64_t now) {
     if (days <= 0) snprintf(moon, sizeof(moon), "%s today", fullFirst ? "Full moon" : "New moon");
     else snprintf(moon, sizeof(moon), "%s in %d day%s", fullFirst ? "Full moon" : "New moon", days, days == 1 ? "" : "s");
     printFit(px, 72, F_SMALL, moon, pw);
-    thickLine(HEADER_H);
+    G->fillRect(0, HEADER_H, epdlayout::W, 4, kBlack);
 }
 
 // ── weather: forecast of today (snapshot of the morning refresh) and the place ──
@@ -229,68 +229,68 @@ void tempText(char* out, size_t cap, int t10) { snprintf(out, cap, "%d\xB0", (in
 
 void drawWeatherBand(int64_t now) {
     const ac::Weather& w = S->weather;
-    // place on the right, always
-    if (opt.place && opt.place[0]) printRight(W - 12, WX_Y + 34, F_HEAD, opt.place);
+    // everything on the left ends at the baseline of the sunrise / sunset line (WX_Y + 72)
+    if (opt.place && opt.place[0]) printRight(W - 12, WX_Y + 30, F_HEAD, opt.place);
     if (!w.valid) {
-        printAt(14, WX_Y + 42, F_TEXT_B, "No weather data");
+        printAt(14, WX_Y + 36, F_TEXT_B, "No weather data");
         const char* err = S->src[clockdata::SRC_WEATHER].error;
-        printFit(14, WX_Y + 72, F_SMALL, err[0] ? err : "not fetched yet", 420);
-        thickLine(WX_Y + WX_H);
+        printFit(14, WX_Y + 62, F_SMALL, err[0] ? err : "not fetched yet", 420);
         return;
     }
     const int di = (int)((ac::dayStart(now) - w.day0) / 86400);
     const ac::DayInfo day = (di >= 0 && di < 3) ? w.day[di] : ac::DayInfo();
     const ac::WxKind kind = ac::kindFromWmo(day.wmo);
 
-    drawWeatherIcon(12, WX_Y + 12, kind);
+    drawWeatherIcon(12, WX_Y + 2, kind);
     char hi[12], lo[12], line[64];
     tempText(hi, sizeof(hi), day.tMax10);
     tempText(lo, sizeof(lo), day.tMin10);
-    printAt(104, WX_Y + 50, F_HUGE, hi);
-    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 50, F_BIG, lo);
+    printAt(104, WX_Y + 44, F_HUGE, hi);
+    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 44, F_BIG, lo);
     snprintf(line, sizeof(line), "%s, rain %u %%", ac::kindName(kind), day.popMax);
-    printFit(104, WX_Y + 82, F_TEXT, line, 330);
+    printFit(104, WX_Y + 72, F_TEXT, line, 330);
 
     if (day.sunrise && day.sunset) {
         const ac::Civil sr = ac::fromSec(day.sunrise), ss = ac::fromSec(day.sunset);
         snprintf(line, sizeof(line), "Sunrise %02d:%02d   Sunset %02d:%02d", sr.hour, sr.minute, ss.hour, ss.minute);
         printRight(W - 12, WX_Y + 72, F_TEXT, line);
     }
-    thickLine(WX_Y + WX_H);
 }
 
-// ── calendar: today and tomorrow as columns: day grid (7..21 h) and, only if needed, a night strip ──
-
-void dayHeader(int64_t ds, int64_t today, char* out, size_t cap) {
-    const ac::Civil c = ac::fromSec(ds);
-    const int wd = ac::weekday(ac::daysOf(ds));
-    if (ds == today) snprintf(out, cap, "Today, %s %d", ac::weekdayName(wd, true), c.day);
-    else if (ds == today + 86400) snprintf(out, cap, "Tomorrow, %s %d", ac::weekdayName(wd, true), c.day);
-    else snprintf(out, cap, "%s %d", ac::weekdayName(wd, true), c.day);
-}
+// ── calendar: today and tomorrow as columns, day grid 8..18 h, events as inverted (black) boxes ──
 
 bool onDay(const ac::Event& e, int64_t ds) {
     const int64_t end = e.end > e.start ? e.end : e.start + 1800;
     return e.start < ds + 86400 && end > ds;
 }
 
+// Events outside the day grid (before DAY_FROM_H / from DAY_TO_H) go to a strip below it. Early ones are shown at
+// once; evening ones of today only from EVENING_FROM_H on ("later"), those of tomorrow not at all (tomorrow they are
+// today's).
+bool nightShown(const ac::Event& e, int64_t ds, int day, int nowMin) {
+    if (!ac::isNightEvent(e, ds, DAY_FROM_H, DAY_TO_H)) return false;
+    const int m = (int)((max(e.start, ds) - ds) / 60);
+    if (m < DAY_FROM_H * 60) return true;
+    return day == 0 && nowMin >= EVENING_FROM_H * 60;
+}
+
 void drawCalendar(int64_t now) {
     const ac::Agenda& a = S->agenda;
     const int64_t today = ac::dayStart(now);
+    const int nowMin = (int)((now - today) / 60);
     headingBar(0, BODY_Y, SEP_X - 8, "EVENTS");
     if (!S->src[clockdata::SRC_CALENDAR].ok) {
-        printAt(12, BODY_Y + BAR_H + 34, F_TEXT_B, "Calendar unavailable");
+        printAt(12, BODY_Y + BAR_H + 30, F_TEXT_B, "Calendar unavailable");
         const char* err = S->src[clockdata::SRC_CALENDAR].error;
-        printFit(12, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", SEP_X - 30);
+        printFit(12, BODY_Y + BAR_H + 56, F_SMALL, err[0] ? err : "not fetched yet", SEP_X - 30);
         return;
     }
-    constexpr int AXIS_W = 30;                       // hour labels
+    constexpr int AXIS_W = 28;                       // hour labels
     const int x0 = AXIS_W, x1 = SEP_X - 12;
     const int colW = (x1 - x0) / CAL_DAYS;
-    const int headY = BODY_Y + BAR_H + 4;            // day names
-    const int allDayY = headY + 28;                  // all-day bars
-    constexpr int ALLDAY_H = 20, ALLDAY_ROWS = 2;
-    constexpr int NIGHT_LINE_H = 20, NIGHT_LINES = 3;
+    const int headY = BODY_Y + BAR_H + 2;            // "Today" / "Tomorrow", small
+    const int allDayY = headY + 20;                  // all-day bars
+    constexpr int BAR_ROW_H = 18, ALLDAY_ROWS = 2, NIGHT_LINES = 3;
 
     // how many all-day rows and night lines are needed (the same for both columns)
     int allDayRows = 0, nightLines = 0;
@@ -300,13 +300,13 @@ void drawCalendar(int64_t now) {
         for (int i = 0; i < a.n; i++) {
             const ac::Event& e = a.ev[i];
             if (e.allDay) { if (e.start < ds + 86400 && e.end > ds) nAll++; }
-            else if (ac::isNightEvent(e, ds, DAY_FROM_H, DAY_TO_H)) nNight++;
+            else if (nightShown(e, ds, d, nowMin)) nNight++;
         }
         allDayRows = max(allDayRows, min(nAll, ALLDAY_ROWS));
         nightLines = max(nightLines, min(nNight, NIGHT_LINES));
     }
-    const int gridY = allDayY + allDayRows * (ALLDAY_H + 3) + 4;
-    const int stripH = nightLines ? 24 + nightLines * NIGHT_LINE_H : 0;       // label line + event lines
+    const int gridY = allDayY + (allDayRows ? allDayRows * (BAR_ROW_H + 3) + 3 : 2);
+    const int stripH = nightLines ? 6 + nightLines * (BAR_ROW_H + 3) : 0;
     const int gridBottom = BODY_BOTTOM - stripH;
     const int gridH = gridBottom - gridY;
     auto yOf = [&](int minutes) {
@@ -323,30 +323,27 @@ void drawCalendar(int64_t now) {
             printRight(AXIS_W - 6, y + 14, F_SMALL, hb);
         }
     }
-    if (stripH) G->fillRect(x0, gridBottom, x1 - x0, 2, kBlack);                // day | night
 
     for (int d = 0; d < CAL_DAYS; d++) {
         const int64_t ds = today + d * 86400LL;
         const int cx = x0 + d * colW;
-        char head[32];
-        dayHeader(ds, today, head, sizeof(head));
-        printFit(cx + 6, headY + 20, F_TEXT_B, head, colW - 8);
+        printAt(cx + 6, headY + 15, F_SMALL, d == 0 ? "Today" : "Tomorrow");
         if (d > 0) G->fillRect(cx - 1, headY, 2, BODY_BOTTOM - headY, kBlack);   // column separator
 
-        // all-day events as black bars with white text
+        // all-day events: black bars with white text
         int row = 0;
         for (int i = 0; i < a.n && row < ALLDAY_ROWS; i++) {
             const ac::Event& e = a.ev[i];
             if (!e.allDay || e.start >= ds + 86400 || e.end <= ds) continue;
-            const int by = allDayY + row * (ALLDAY_H + 3);
-            G->fillRoundRect(cx + 3, by, colW - 6, ALLDAY_H, 3, kBlack);
+            const int by = allDayY + row * (BAR_ROW_H + 3);
+            G->fillRoundRect(cx + 3, by, colW - 6, BAR_ROW_H, 3, kBlack);
             G->setTextColor(kWhite);
-            printFit(cx + 7, by + 15, F_SMALL, e.summary, colW - 14);
+            printFit(cx + 7, by + 14, F_SMALL, e.summary, colW - 14);
             G->setTextColor(kBlack);
             row++;
         }
 
-        // day events as boxes; overlapping ones share the width (lanes)
+        // day events as inverted boxes; overlapping ones share the width (lanes)
         int idx[ac::kMaxEvents], lane[ac::kMaxEvents], n = 0;
         for (int i = 0; i < a.n && n < ac::kMaxEvents; i++) {
             const ac::Event& e = a.ev[i];
@@ -372,81 +369,82 @@ void drawCalendar(int64_t now) {
             const int eMin = min((int)((min(end, ds + 86400) - ds) / 60), DAY_TO_H * 60);
             const int lw = (colW - 6) / lanes;
             const int bx = cx + 3 + lane[k] * lw;
-            const int top = yOf(sMin);
-            const int bottom = min(max(yOf(eMin), top + 22), gridBottom);
-            G->fillRect(bx, top, lw - 2, bottom - top, kWhite);
-            G->drawRect(bx, top, lw - 2, bottom - top, kBlack);
-            G->drawRect(bx + 1, top + 1, lw - 4, bottom - top - 2, kBlack);
-            G->fillRect(bx, top, 4, bottom - top, kBlack);                      // accent on the left
-            printFit(bx + 7, top + 16, F_SMALL, e.summary, lw - 12);
-            if (bottom - top >= 40 && e.start >= ds) {                          // tall enough: the time below
-                const ac::Civil st = ac::fromSec(e.start);
-                char tl[8];
-                snprintf(tl, sizeof(tl), "%02d:%02d", st.hour, st.minute);
-                printAt(bx + 7, top + 34, F_SMALL, tl);
+            const int top = yOf(sMin) + 1;
+            const int bottom = min(max(yOf(eMin) - 1, top + 26), gridBottom);
+            const int h = bottom - top;
+            G->fillRoundRect(bx, top, lw - 2, h, 3, kBlack);
+            G->setTextColor(kWhite);
+            if (h >= 46 && e.start >= ds && e.end > e.start) {        // room: start - end small above the title
+                const ac::Civil st = ac::fromSec(e.start), en = ac::fromSec(e.end);
+                char a1[8], a2[8], range[20];                               // full hours without ":00": "8-18", "14:30-15:30"
+                if (st.minute) snprintf(a1, sizeof(a1), "%d:%02d", st.hour, st.minute); else snprintf(a1, sizeof(a1), "%d", st.hour);
+                if (en.minute) snprintf(a2, sizeof(a2), "%d:%02d", en.hour, en.minute); else snprintf(a2, sizeof(a2), "%d", en.hour);
+                snprintf(range, sizeof(range), "%s-%s", a1, a2);
+                printFit(bx + 6, top + 19, F_SMALL, range, lw - 12);
+                printFit(bx + 6, top + 39, F_SMALL, e.summary, lw - 12);
+            } else {
+                printFit(bx + 6, top + 20, F_SMALL, e.summary, lw - 12);  // a little room above the title
             }
+            G->setTextColor(kBlack);
         }
 
-        // night strip: label and the events before 7:00 / from 21:00 (at most three lines)
+        // strip below the grid: early events and (from the afternoon) the evening ones, as black bars
         if (stripH) {
-            int ny = gridBottom + 4;
+            G->fillRect(cx + 3, gridBottom + 1, colW - 6, 2, kBlack);
+            int ny = gridBottom + 6;
             int shown = 0;
             for (int i = 0; i < a.n && shown < NIGHT_LINES; i++) {
                 const ac::Event& e = a.ev[i];
-                if (!ac::isNightEvent(e, ds, DAY_FROM_H, DAY_TO_H)) continue;
-                if (shown == 0) {
-                    printAt(cx + 6, ny + 16, F_SMALL, "Night");
-                    ny += 24;
-                }
-                const int64_t s = max(e.start, ds);
-                const ac::Civil st = ac::fromSec(s);
+                if (!nightShown(e, ds, d, nowMin)) continue;
+                const ac::Civil st = ac::fromSec(max(e.start, ds));
                 char line[80];
                 snprintf(line, sizeof(line), "%02d:%02d %s", st.hour, st.minute, e.summary);
-                printFit(cx + 6, ny + 14, F_SMALL, line, colW - 12);
-                ny += NIGHT_LINE_H;
+                G->fillRoundRect(cx + 3, ny, colW - 6, BAR_ROW_H, 3, kBlack);
+                G->setTextColor(kWhite);
+                printFit(cx + 7, ny + 14, F_SMALL, line, colW - 14);
+                G->setTextColor(kBlack);
+                ny += BAR_ROW_H + 3;
                 shown++;
             }
         }
     }
 }
 
-// ── to-do ────────────────────────────────────────────────────────────────
+// ── dashboard (to-do list): open and ticked tasks in the order of the file / sorted, as the parser delivers them ──
 
 void drawTodo(int64_t now) {
-    const int x0 = SEP_X + 14, x1 = W - 12;
+    const int x0 = SEP_X + 12, x1 = W - 10;
     const int64_t today = ac::dayStart(now);
     headingBar(SEP_X, BODY_Y, W - SEP_X, "DASHBOARD");
     if (!S->src[clockdata::SRC_TODO].ok) {
-        printAt(x0, BODY_Y + BAR_H + 34, F_TEXT_B, "Dashboard unavailable");
+        printAt(x0, BODY_Y + BAR_H + 30, F_TEXT_B, "Dashboard unavailable");
         const char* err = S->src[clockdata::SRC_TODO].error;
-        printFit(x0, BODY_Y + BAR_H + 62, F_SMALL, err[0] ? err : "not fetched yet", x1 - x0);
+        printFit(x0, BODY_Y + BAR_H + 56, F_SMALL, err[0] ? err : "not fetched yet", x1 - x0);
         return;
     }
-    int y = BODY_Y + BAR_H + 8;
-
+    int y = BODY_Y + BAR_H + 6;
     for (int i = 0; i < S->taskCount; i++) {
-        if (y + ROW_H > BODY_BOTTOM) break;                      // the list simply ends at the bottom edge
+        if (y + ROW_H > epdlayout::H - 2) break;                      // the list simply ends at the bottom edge
         const ac::Task& t = S->tasks[i];
         const bool overdue = !t.done && t.hasDate && t.date < today;
         const bool dueToday = !t.done && t.hasDate && t.date == today;
-        for (int d = 0; d < 2; d++) G->drawRect(x0 + d, y + 6 + d, 18 - 2 * d, 18 - 2 * d, kBlack);
-        if (overdue || dueToday) G->fillRect(x0 + 5, y + 11, 8, 8, kBlack);     // due: filled
-        if (t.done) {                                                           // ticked: a check mark
+        for (int d = 0; d < 2; d++) G->drawRect(x0 + d, y + 4 + d, 16 - 2 * d, 16 - 2 * d, kBlack);
+        if (overdue || dueToday) G->fillRect(x0 + 5, y + 9, 6, 6, kBlack);          // due: filled
+        if (t.done) {                                                               // ticked: a check mark
             for (int d = 0; d < 3; d++) {
-                G->drawLine(x0 + 3, y + 14 + d, x0 + 7, y + 18 + d, kBlack);
-                G->drawLine(x0 + 7, y + 18 + d, x0 + 16, y + 6 + d, kBlack);
+                G->drawLine(x0 + 3, y + 12 + d, x0 + 6, y + 16 + d, kBlack);
+                G->drawLine(x0 + 6, y + 16 + d, x0 + 15, y + 5 + d, kBlack);
             }
         }
-        const GFXfont* f = (!t.done && (t.priority >= 2 || overdue || dueToday)) ? F_TEXT_B : F_TEXT;
-        printFit(x0 + 30, y + 22, f, t.text, x1 - (x0 + 30));
-        if (t.done) {                                                           // and struck through
+        const GFXfont* f = (!t.done && (t.priority >= 2 || overdue || dueToday)) ? F_SMALL_B : F_SMALL;
+        printFit(x0 + 26, y + 18, f, t.text, x1 - (x0 + 26));
+        if (t.done) {                                                               // and struck through
             const int w = textWidth(f, t.text);
-            G->fillRect(x0 + 30, y + 14, min(w, x1 - (x0 + 30)), 2, kBlack);
+            G->fillRect(x0 + 26, y + 11, min(w, x1 - (x0 + 26)), 2, kBlack);
         }
         y += ROW_H;
-
     }
-    if (S->taskCount == 0) printAt(x0 + 30, y + 22, F_TEXT, "All done");
+    if (S->taskCount == 0) printAt(x0 + 26, y + 18, F_SMALL, "All done");
 }
 
 }  // namespace

@@ -1,6 +1,7 @@
 #include "epd_clock.h"
 #include <ArcCore.h>
 #include <Preferences.h>
+#include <WiFi.h>
 #include "clock_config.h"
 #include "core/civil.h"
 #include "data_store.h"
@@ -93,7 +94,12 @@ bool refreshNow(int64_t now, uint32_t hash, const char* why) {
     Serial.printf("[EPD] Aktualisierung (%s): %u Termine, %d Aufgaben, Wetter %s\n", why, (unsigned)s_snap->agenda.n, s_snap->taskCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
-    if (!drawAll(now)) {
+    // The radio's modem sleep wakes up in bursts that disturbed the long SPI wires (rows of the picture shifted by
+    // a few pixels): the radio stays awake while the frame is sent and the panel refreshes.
+    WiFi.setSleep(false);
+    const bool drawn = drawAll(now);
+    WiFi.setSleep(true);
+    if (!drawn) {
         Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch bei der naechsten Pruefung");
         s_drawnHash = 0;
         return false;

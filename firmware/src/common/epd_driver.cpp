@@ -7,7 +7,7 @@ namespace epddrv {
 
 namespace {
 
-uint32_t s_spiHz = 2000000;
+uint32_t s_spiHz = 1000000;
 Stats s_stats;
 
 // Busy waits of the refresh in progress: GxEPD2 calls the callback every ~5 ms while BUSY is active.

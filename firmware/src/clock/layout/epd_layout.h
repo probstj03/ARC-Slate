@@ -15,8 +15,10 @@ struct Options {
 };
 
 // Calendar: the day grid covers DAY_FROM_H..DAY_TO_H o'clock, timed events outside are "night" and get a strip below
-// the grid (only when there are any). CAL_DAYS days are shown (today and tomorrow).
-constexpr int DAY_FROM_H = 7, DAY_TO_H = 21, CAL_DAYS = 2;
+// the grid (only when there are any and they are due to be shown). CAL_DAYS days are shown (today and tomorrow).
+constexpr int DAY_FROM_H = 8, DAY_TO_H = 18, CAL_DAYS = 2;
+// Events after DAY_TO_H of today appear in the strip only from this hour on ("later"); early ones at once.
+constexpr int EVENING_FROM_H = 17;
 
 // Are there timed events at night on the days the calendar shows? Without them the e-ink rests at night.
 bool hasNightEvents(const clockdata::Data& snap, int64_t now);

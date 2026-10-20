@@ -41,7 +41,7 @@ private:
     bool _was;
 };
 
-// SPI clock of the panel (default 2 MHz: the matrices share MOSI/SCK and load the lines).
+// SPI clock of the panel (default 1 MHz: the matrices share MOSI/SCK and load the lines; the frame takes 0.4 s).
 void setSpiHz(uint32_t hz);
 uint32_t spiHz();
 

@@ -80,6 +80,7 @@ const char* kTodoMd =
     "- [ ] Mikrofone laden \xF0\x9F\x93\x85 2026-10-13\n"
     "- [ ] Rechnung Verleih bezahlen \xF0\x9F\x93\x85 2026-10-16\n"
     "- [ ] Ein sehr langer Aufgabentext der garantiert nicht in die Spalte passt und gek\xC3\xBCrzt werden muss #privat\n"
+    "- [x] Fotos gesichert\n"
     "- [ ] Ersatzakku bestellen\n"
     "- [ ] Neue Kabeltrommel kaufen\n"
     "- [ ] Lizenz verl\xC3\xA4ngern \xE2\x8F\xB3 2026-10-22\n"
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
     const char* out = argc > 1 ? argv[1] : "epd_preview.pgm";
     const int variant = argc > 2 ? atoi(argv[2]) : 0;      // 0 normal, 1 empty/offline, 2 busy night/snow, 3 night events, 4 waxing gibbous moon
 
-    const int64_t now = variant == 4 ? L(2026, 10, 20, 5, 30) : L(2026, 10, 12, 5, 30);
+    const int64_t now = variant == 4 ? L(2026, 10, 20, 5, 30) : variant == 3 ? L(2026, 10, 12, 18, 30) : L(2026, 10, 12, 5, 30);
     const int64_t today = dayStart(now);
     clockdata::Data* data = new clockdata::Data();
     g_data = data;
