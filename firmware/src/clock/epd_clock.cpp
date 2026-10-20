@@ -22,7 +22,12 @@ clockdata::Data* s_snap = nullptr;          // copy of the data for one drawing 
 ac::Weather* s_wx = nullptr;                // weather as of the morning refresh (frozen during the day)
 TaskHandle_t s_task = nullptr;
 volatile bool s_requested = false;
-uint32_t s_drawnHash = 0;                   // hash of the picture on the panel (0 = unknown)
+constexpr int ZONES = epdlayout::ZONE_COUNT;
+constexpr int PARTIALS_BEFORE_FULL = 12;    // a full refresh against ghosting after this many partial ones
+uint32_t s_zone[ZONES] = {0};               // hash per zone of the picture on the panel (0 = unknown)
+int s_partials = 0;                         // partial refreshes since the last full one
+bool s_panelValid = false;                  // the panel shows the picture of s_zone (a full refresh worked since the start)
+volatile bool s_partialTest = false;
 int64_t s_lastDay = 0;                      // local day of the last daily refresh (weather snapshot)
 int64_t s_lastRefreshSec = 0;
 int64_t s_nextCheckSec = 0;
@@ -33,16 +38,17 @@ Preferences s_prefs;
 
 int64_t nowSec() { return arc::clock::nowNs() / 1000000000LL; }
 
-// Draws the layout into nothing and hashes the pixels: same hash = same picture = no refresh needed.
+// Draws the layout into nothing and hashes the pixels per zone: same hash = same picture = no refresh needed.
 class HashGfx : public Adafruit_GFX {
 public:
-    HashGfx() : Adafruit_GFX(epdlayout::W, epdlayout::H) {}
-    uint32_t hash = 2166136261u;
+    HashGfx() : Adafruit_GFX(epdlayout::W, epdlayout::H) { for (auto& v : zone) v = 2166136261u; }
+    uint32_t zone[ZONES];
     void drawPixel(int16_t x, int16_t y, uint16_t color) override {
         if (color) return;                                       // white is the background: only black pixels count
-        hash = (hash ^ ((uint32_t)x | ((uint32_t)y << 10))) * 16777619u;
+        uint32_t& h = zone[epdlayout::zoneOf(x, y)];
+        h = (h ^ ((uint32_t)x | ((uint32_t)y << 10))) * 16777619u;
     }
-    void fillScreen(uint16_t color) override { hash = (hash ^ color) * 16777619u; }
+    void fillScreen(uint16_t color) override { for (auto& v : zone) v = (v ^ color) * 16777619u; }
 };
 
 epdlayout::Options options(String& placeKeep) {
@@ -63,48 +69,73 @@ void takeSnapshot() {
     if (s_wx->valid) s_snap->weather = *s_wx;
 }
 
-uint32_t pictureHash(int64_t now) {
+void pictureZones(int64_t now, uint32_t out[ZONES]) {
     String place;
     const epdlayout::Options opt = options(place);
     HashGfx h;
     epdlayout::draw(h, *s_snap, now, opt);
-    return h.hash ? h.hash : 1;
+    for (int z = 0; z < ZONES; z++) out[z] = h.zone[z] ? h.zone[z] : 1;
 }
 
-bool drawAll(int64_t now) {
+// Draws the whole frame into the buffer and sends it: all of it (window = nullptr) or only the window (partial refresh).
+bool drawFrame(int64_t now, const epdlayout::Rect* window) {
     String place;
     const epdlayout::Options opt = options(place);
     spibus::lock();
     d.setFullWindow();
     epdlayout::draw(d, *s_snap, now, opt);
-    const bool ok = epddrv::refreshFull();
+    const bool ok = window ? epddrv::refreshWindow(window->x, window->y, window->w, window->h) : epddrv::refreshFull();
     spibus::unlock();
     return ok;
+}
+
+epdlayout::Rect alignX(epdlayout::Rect r) {         // the panel takes windows on multiples of 8 in x
+    const int x1 = (r.x + r.w + 7) & ~7;
+    r.x &= ~7;
+    r.w = x1 - r.x;
+    return r;
+}
+
+// A small change (one or two zones, together at most 45 % of the picture) is refreshed partially; the daily refresh,
+// the first one after a start and every PARTIALS_BEFORE_FULL-th one are full ones (ghosting).
+bool partialWindow(uint32_t mask, bool daily, epdlayout::Rect& out) {
+    if (daily || !s_panelValid || s_partials >= PARTIALS_BEFORE_FULL) return false;
+    int x0 = epdlayout::W, y0 = epdlayout::H, x1 = 0, y1 = 0;
+    for (int z = 0; z < ZONES; z++) {
+        if (!(mask & (1u << z))) continue;
+        const epdlayout::Rect q = epdlayout::zoneRect(z);
+        x0 = min(x0, q.x); y0 = min(y0, q.y); x1 = max(x1, q.x + q.w); y1 = max(y1, q.y + q.h);
+    }
+    if ((long)(x1 - x0) * (y1 - y0) > (long)epdlayout::W * epdlayout::H * 45 / 100) return false;
+    out = alignX({x0, y0, x1 - x0, y1 - y0});
+    return true;
 }
 
 void saveState() {
     s_prefs.begin("clock", false);
     s_prefs.putLong64("epdDay", s_lastDay);
-    s_prefs.putULong("epdHash", s_drawnHash);
     s_prefs.end();
 }
 
 // Refreshes the panel with the snapshot. Returns false if the panel did not refresh.
-bool refreshNow(int64_t now, uint32_t hash, const char* why) {
-    Serial.printf("[EPD] Aktualisierung (%s): %u Termine, %d Dashboard-Zeilen, Wetter %s\n", why, (unsigned)s_snap->agenda.n, s_snap->docCount,
+bool refreshNow(int64_t now, const uint32_t zones[ZONES], const epdlayout::Rect* window, const char* why) {
+    Serial.printf("[EPD] Aktualisierung (%s%s): %u Termine, %d Dashboard-Zeilen, Wetter %s\n", why, window ? ", teilweise" : "", (unsigned)s_snap->agenda.n, s_snap->docCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
     // The radio's modem sleep wakes up in bursts that disturbed the long SPI wires (rows of the picture shifted by
     // a few pixels): the radio stays awake while the frame is sent and the panel refreshes.
     WiFi.setSleep(false);
-    const bool drawn = drawAll(now);
+    const bool drawn = drawFrame(now, window);
     WiFi.setSleep(true);
     if (!drawn) {
         Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch bei der naechsten Pruefung");
-        s_drawnHash = 0;
+        for (auto& v : s_zone) v = 0;                  // unknown: the next check draws everything again
+        s_panelValid = false;
         return false;
     }
-    s_drawnHash = hash;
+    for (int z = 0; z < ZONES; z++) s_zone[z] = zones[z];
+    if (window) s_partials++;
+    else { s_partials = 0; s_panelValid = true; }
     s_lastRefreshSec = now;
     s_refreshCount++;
     s_pendingSince = 0;
@@ -119,6 +150,22 @@ void epdTask(void*) {
     bool bootDone = false;                  // the slate firmware may have drawn the panel: always draw once after a start
     for (;;) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15000));
+        if (s_partialTest) {                    // serial `epdpart`: a partial refresh of the dashboard area, to check that path
+            s_partialTest = false;
+            if (!s_snap || !s_panelValid) {
+                Serial.println("[EPD] epdpart: erst nach einem vollen Refresh moeglich");
+            } else {
+                takeSnapshot();
+                const epdlayout::Rect r = alignX(epdlayout::zoneRect(epdlayout::ZONE_DASHBOARD));
+                const uint32_t t0 = millis();
+                WiFi.setSleep(false);
+                const bool ok = drawFrame(nowSec(), &r);
+                WiFi.setSleep(true);
+                Serial.printf("[EPD] epdpart: Bereich %dx%d bei %d,%d in %lu ms %s\n", r.w, r.h, r.x, r.y,
+                              (unsigned long)(millis() - t0), ok ? "ok" : "FEHLGESCHLAGEN");
+            }
+            continue;
+        }
         if (!timePlausible()) continue;
         const ClockConfig cfg = clockcfg::copy();
         const int64_t now = nowSec();
@@ -148,15 +195,19 @@ void epdTask(void*) {
             }
         }
         takeSnapshot();
-        const uint32_t hash = pictureHash(now);
+        uint32_t zh[ZONES];
+        pictureZones(now, zh);
         s_checkCount++;
 
         if (!bootDone || requested) {
-            refreshNow(now, hash, !bootDone ? "Start" : "Befehl");
+            refreshNow(now, zh, nullptr, !bootDone ? "Start" : "Befehl");
             bootDone = true;
             continue;
         }
-        if (hash == s_drawnHash) {
+        uint32_t mask = 0;
+        for (int z = 0; z < ZONES; z++)
+            if (zh[z] != s_zone[z]) mask |= 1u << z;
+        if (!mask) {
             s_pendingSince = 0;
             continue;                           // nothing changed: the panel stays untouched
         }
@@ -180,7 +231,9 @@ void epdTask(void*) {
                 continue;
             }
         }
-        refreshNow(now, hash, daily ? "taeglich" : "Aenderung");
+        epdlayout::Rect win = {0, 0, 0, 0};
+        const bool part = partialWindow(mask, daily, win);
+        refreshNow(now, zh, part ? &win : nullptr, daily ? "taeglich" : "Aenderung");
     }
 }
 
@@ -191,7 +244,6 @@ namespace epdclock {
 void begin() {
     s_prefs.begin("clock", true);
     s_lastDay = s_prefs.getLong64("epdDay", 0);
-    s_drawnHash = s_prefs.getULong("epdHash", 0);
     s_prefs.end();
     epddrv::init();                          // no drawing here: the task draws once the time and the data are there
 }
@@ -202,6 +254,11 @@ void startTask() {
 
 void request(bool) {
     s_requested = true;
+    if (s_task) xTaskNotifyGive(s_task);
+}
+
+void requestPartialTest() {
+    s_partialTest = true;
     if (s_task) xTaskNotifyGive(s_task);
 }
 
@@ -218,8 +275,8 @@ String statusLine() {
     char buf[128];
     if (!s_lastRefreshSec) return "E-Ink: seit dem Start noch nicht gezeichnet";
     const ac::Civil c = ac::fromSec(s_lastRefreshSec);
-    snprintf(buf, sizeof(buf), "E-Ink: zuletzt %d.%d. %02d:%02d, %u Refreshes / %u Pruefungen seit Start%s", c.day, c.month, c.hour,
-             c.minute, (unsigned)s_refreshCount, (unsigned)s_checkCount, s_pendingSince ? ", Aenderung wartet auf die Klappe" : "");
+    snprintf(buf, sizeof(buf), "E-Ink: zuletzt %d.%d. %02d:%02d, %u Refreshes (%d teilweise seit dem letzten vollen) / %u Pruefungen%s", c.day,
+             c.month, c.hour, c.minute, (unsigned)s_refreshCount, s_partials, (unsigned)s_checkCount, s_pendingSince ? ", Aenderung wartet auf die Klappe" : "");
     return String(buf);
 }
 

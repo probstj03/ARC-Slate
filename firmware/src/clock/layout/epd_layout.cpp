@@ -507,6 +507,21 @@ void draw(Adafruit_GFX& g, const clockdata::Data& snap, int64_t now, const Optio
     drawDashboard(now);
 }
 
+Rect zoneRect(int zone) {
+    switch (zone) {
+        case ZONE_HEADER: return {0, 0, W, WX_Y};
+        case ZONE_WEATHER: return {0, WX_Y, W, BODY_Y - WX_Y};
+        case ZONE_CALENDAR: return {0, BODY_Y, SEP_X - 4, H - BODY_Y};
+        default: return {SEP_X - 4, BODY_Y, W - (SEP_X - 4), H - BODY_Y};
+    }
+}
+
+int zoneOf(int x, int y) {
+    if (y < WX_Y) return ZONE_HEADER;
+    if (y < BODY_Y) return ZONE_WEATHER;
+    return x < SEP_X - 4 ? ZONE_CALENDAR : ZONE_DASHBOARD;
+}
+
 bool hasNightEvents(const clockdata::Data& snap, int64_t now) {
     return snap.agenda.hasNightEvents(ac::dayStart(now), CAL_DAYS, DAY_FROM_H, DAY_TO_H);
 }

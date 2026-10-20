@@ -7,6 +7,8 @@
 //    panel (new event, task done, new day ...) the panel is refreshed;
 //  - the weather on the panel is the forecast of the daily refresh (default 05:30) and does not change during
 //    the day, so weather updates never trigger a refresh;
+//  - a small change (one or two zones: header, weather, calendar, dashboard) is refreshed partially, only in that area;
+//    the daily refresh, the first one after a start, big changes and every 12th one are full refreshes (ghosting);
 //  - once after every start (the slate firmware may have drawn the panel) and on request;
 //  - with the lid open a change waits until it closes (at most 2 h);
 //  - night rest: from 22:00 until the daily refresh nothing is redrawn unless there are events at night.
@@ -16,6 +18,9 @@ namespace epdclock {
 
 void begin();                       // loads the state from NVS
 void startTask();
+
+// Partial refresh of the dashboard area (serial `epdpart`), to check that path.
+void requestPartialTest();
 
 // Refresh as soon as possible (with fresh data), even with the lid open.
 void request(bool force = false);

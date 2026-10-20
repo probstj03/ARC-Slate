@@ -23,6 +23,12 @@ constexpr int EVENING_FROM_H = 17;
 // Are there timed events at night on the days the calendar shows? Without them the e-ink rests at night.
 bool hasNightEvents(const clockdata::Data& snap, int64_t now);
 
+// Zones of the picture for partial refreshes: where only one zone (or two) changed, only that area is refreshed.
+enum Zone { ZONE_HEADER = 0, ZONE_WEATHER, ZONE_CALENDAR, ZONE_DASHBOARD, ZONE_COUNT };
+struct Rect { int x, y, w, h; };
+Rect zoneRect(int zone);
+int zoneOf(int x, int y);
+
 // Draws the whole screen (background included). Black = 0x0000, white = 0xFFFF.
 void draw(Adafruit_GFX& g, const clockdata::Data& snap, int64_t now, const Options& opt);
 

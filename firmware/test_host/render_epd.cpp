@@ -207,7 +207,17 @@ int main(int argc, char** argv) {
         data->src[clockdata::SRC_CALENDAR].at = now - 60;
 
         DocParser dp(onDocLine, nullptr);
-        dp.feed(kTodoMd, strlen(kTodoMd));
+        std::string md = kTodoMd;                                        // optional 3rd argument: a markdown file instead
+        if (argc > 3) {
+            if (FILE* mf = fopen(argv[3], "rb")) {
+                md.clear();
+                char chunk[512];
+                size_t n;
+                while ((n = fread(chunk, 1, sizeof(chunk), mf)) > 0) md.append(chunk, n);
+                fclose(mf);
+            }
+        }
+        dp.feed(md.c_str(), md.size());
         dp.finish();
         data->src[clockdata::SRC_TODO].ok = true;
         data->src[clockdata::SRC_TODO].at = now - 60;
