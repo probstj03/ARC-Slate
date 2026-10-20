@@ -27,9 +27,9 @@ namespace {
 
 constexpr uint16_t kBlack = 0x0000, kWhite = 0xFFFF;
 
-constexpr int HEADER_H = 96;
-constexpr int WX_Y = 100, WX_H = 74;      // weather band: the left block ends flush with the sunrise / sunset line
-constexpr int BODY_Y = WX_Y + WX_H + 10, BODY_BOTTOM = 476;
+constexpr int HEADER_H = 98;                // the line under the header: 2 px lower
+constexpr int WX_Y = HEADER_H + 4, WX_H = 74;      // weather band: the left block ends flush with the sunrise / sunset line
+constexpr int BODY_Y = WX_Y + WX_H + 8, BODY_BOTTOM = 476;
 constexpr int SEP_X = 490;                // calendar | dashboard (the calendar is the wider one)
 constexpr int BAR_H = 28;                 // black heading bars
 
@@ -222,7 +222,7 @@ void drawHeader(int64_t now) {
     G->fillRect(0, HEADER_H, epdlayout::W, 4, kBlack);
 }
 
-// ── weather: forecast of today (snapshot of the morning refresh) and the place ──
+// ── weather: forecast of today and the place ──
 
 void tempText(char* out, size_t cap, int t10) { snprintf(out, cap, "%d\xB0", (int)lroundf(t10 / 10.0f)); }
 
@@ -236,7 +236,7 @@ void drawPin(int cx, int top) {
 void drawWeatherBand(int64_t now) {
     const ac::Weather& w = S->weather;
     // place with a pin on the right (baseline WX_Y + 24); the left block ends at the baseline of the sunrise / sunset
-    // line (WX_Y + 66)
+    // line (WX_Y + 68)
     if (opt.place && opt.place[0]) {
         printRight(W - 12, WX_Y + 24, F_HEAD, opt.place);
         drawPin(W - 12 - textWidth(F_HEAD, opt.place) - 16, WX_Y + 3);
@@ -255,15 +255,15 @@ void drawWeatherBand(int64_t now) {
     char hi[12], lo[12], line[64];
     tempText(hi, sizeof(hi), day.tMax10);
     tempText(lo, sizeof(lo), day.tMin10);
-    printAt(104, WX_Y + 40, F_HUGE, hi);
-    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 40, F_BIG, lo);
-    snprintf(line, sizeof(line), "%s, rain %u %%", ac::kindName(kind), day.popMax);
-    printFit(104, WX_Y + 66, F_TEXT, line, 330);
+    printAt(104, WX_Y + 46, F_HUGE, hi);
+    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 46, F_BIG, lo);
+    snprintf(line, sizeof(line), "%s, rain %u %%", ac::kindName(kind), (unsigned)((day.popMax + 5) / 10 * 10));   // in steps of 10: fewer refreshes
+    printFit(104, WX_Y + 68, F_TEXT, line, 330);
 
     if (day.sunrise && day.sunset) {
         const ac::Civil sr = ac::fromSec(day.sunrise), ss = ac::fromSec(day.sunset);
         snprintf(line, sizeof(line), "Sunrise %02d:%02d   Sunset %02d:%02d", sr.hour, sr.minute, ss.hour, ss.minute);
-        printRight(W - 12, WX_Y + 66, F_TEXT, line);
+        printRight(W - 12, WX_Y + 68, F_TEXT, line);
     }
 }
 

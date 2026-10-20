@@ -21,6 +21,8 @@ void requestAll();           // fetch everything as soon as possible
 void request(Source s);
 // Waits until every configured source was tried since the last requestAll() (or the timeout).
 bool waitForFresh(uint32_t timeoutMs);
+// Waits until WiFi and the time are there (true) or the timeout is over (false: the cached data has to do).
+bool waitForNetwork(uint32_t timeoutMs);
 
 // Fetches one source right now in the calling task and prints what it got (serial command).
 void fetchNowVerbose(Source s, Print& out);

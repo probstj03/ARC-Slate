@@ -111,6 +111,7 @@ void printHelp() {
         "  fetch [cal|todo|wx|all]   Daten jetzt abrufen und anzeigen\n"
         "  epd                 E-Ink jetzt aktualisieren (sonst nur bei Aenderungen, Pruefung alle 15 min; kleine teilweise)\n"
         "  epdpart             Test: Dashboard-Bereich teilweise aktualisieren\n"
+        "  epdcheck            Aenderungen jetzt pruefen (statt zur naechsten Viertelstunde)\n"
         "  epdtime HH:MM       taeglicher Wetter-Stand auf dem E-Ink\n"
         "  bright day|night N  Helligkeit 0-15 (folgt dem Sonnenstand) | idle MIN | remind MIN | flash 0|1\n"
         "  every cal|todo|wx MIN   Abrufintervalle\n"
@@ -256,6 +257,7 @@ void handleSerial() {
     else if (cmd == "n") { arc::net::requestNtpSync(); Serial.println("NTP-Sync angefordert"); }
     else if (cmd == "sqw") detectSqwEdge();
     else if (cmd == "epdpart") epdclock::requestPartialTest();
+    else if (cmd == "epdcheck") epdclock::checkNow();
     else if (cmd == "wxtest") {
         // wxtest KIND [night] [PHASE 0..1]: shows that weather on the matrix for 60 s
         struct Kind { const char* name; uint8_t wmo, wind; };

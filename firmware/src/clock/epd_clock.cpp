@@ -19,7 +19,6 @@ constexpr int64_t LID_DEFER_MAX_SEC = 2 * 3600;    // a change waits at most thi
 constexpr int QUIET_FROM_MIN = 22 * 60;            // night rest: from 22:00 until the daily refresh
 
 clockdata::Data* s_snap = nullptr;          // copy of the data for one drawing pass
-ac::Weather* s_wx = nullptr;                // weather as of the morning refresh (frozen during the day)
 TaskHandle_t s_task = nullptr;
 volatile bool s_requested = false;
 constexpr int ZONES = epdlayout::ZONE_COUNT;
@@ -59,14 +58,12 @@ epdlayout::Options options(String& placeKeep) {
     return opt;
 }
 
-// Copies the current data, with the weather of the morning refresh.
+// Copies the current data (the forecast of the day on the panel follows the weather data).
 void takeSnapshot() {
     if (!s_snap) s_snap = new clockdata::Data();
-    if (!s_wx) s_wx = new ac::Weather();
     clockdata::lock();
     *s_snap = clockdata::data();
     clockdata::unlock();
-    if (s_wx->valid) s_snap->weather = *s_wx;
 }
 
 void pictureZones(int64_t now, uint32_t out[ZONES]) {
@@ -180,19 +177,14 @@ void epdTask(void*) {
         s_requested = false;
         s_nextCheckSec = (now / CHECK_EVERY_SEC + 1) * CHECK_EVERY_SEC;   // on the quarter hour
 
+        if (!bootDone) clockdata::waitForNetwork(45000);   // the first picture should have fresh data, not the cache
         if (daily || requested || !bootDone) {
             clockdata::requestAll();
             clockdata::waitForFresh(60000);     // without network: the cached data is drawn
         }
-        if (!s_wx) s_wx = new ac::Weather();
-        if (daily || !s_wx->valid) {
-            clockdata::lock();
-            *s_wx = clockdata::data().weather;
-            clockdata::unlock();
-            if (daily) {
-                s_lastDay = today;
-                saveState();
-            }
+        if (daily) {                            // remembered; the daily refresh is always a full one (ghosting)
+            s_lastDay = today;
+            saveState();
         }
         takeSnapshot();
         uint32_t zh[ZONES];
@@ -223,16 +215,17 @@ void epdTask(void*) {
             continue;
         }
         s_quietLogged = false;
-        // A change. With the lid open the refresh (black/white flashing) waits, but not forever.
-        if (lid::open()) {
+        // A change. A full refresh (black/white flashing) waits with the lid open, but not forever; a partial one is
+        // hardly noticeable and is drawn at once.
+        epdlayout::Rect win = {0, 0, 0, 0};
+        const bool part = partialWindow(mask, daily, win);
+        if (!part && lid::open()) {
             if (!s_pendingSince) s_pendingSince = now;
             if (now - s_pendingSince < LID_DEFER_MAX_SEC) {
-                Serial.println("[EPD] Aenderung erkannt - wartet bis die Klappe zu ist");
+                Serial.println("[EPD] Aenderung erkannt - der volle Refresh wartet bis die Klappe zu ist");
                 continue;
             }
         }
-        epdlayout::Rect win = {0, 0, 0, 0};
-        const bool part = partialWindow(mask, daily, win);
         refreshNow(now, zh, part ? &win : nullptr, daily ? "taeglich" : "Aenderung");
     }
 }
@@ -259,6 +252,11 @@ void request(bool) {
 
 void requestPartialTest() {
     s_partialTest = true;
+    if (s_task) xTaskNotifyGive(s_task);
+}
+
+void checkNow() {
+    s_nextCheckSec = 0;                      // the next pass looks for changes at once
     if (s_task) xTaskNotifyGive(s_task);
 }
 

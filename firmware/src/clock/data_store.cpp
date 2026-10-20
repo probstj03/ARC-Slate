@@ -489,6 +489,9 @@ void begin() {
     s_fetchMtx = xSemaphoreCreateMutex();
     LittleFS.begin(true);
     loadCache();
+    // The first save comes after the next successful fetch round, not right after the first source (that would
+    // store a cache with only the calendar in it).
+    s_lastCacheSave = millis();
 }
 
 void startTask() {
@@ -506,6 +509,12 @@ void relocate() { s_located = false; }
 void requestAll() {
     for (int i = 0; i < SRC_COUNT; i++) s_attemptsAtRequest[i] = s_attempts[i];
     s_requestMask |= (1u << SRC_COUNT) - 1;
+}
+
+bool waitForNetwork(uint32_t timeoutMs) {
+    const uint32_t start = millis();
+    while (!networkOk() && millis() - start < timeoutMs) vTaskDelay(pdMS_TO_TICKS(250));
+    return networkOk();
 }
 
 bool waitForFresh(uint32_t timeoutMs) {
