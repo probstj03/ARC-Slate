@@ -7,7 +7,7 @@
 #include "civil.h"
 #include "fold.h"
 #include "ics.h"
-#include "todo.h"
+#include "doc.h"
 #include "weather.h"
 #include "../src/clock/core/data_model.h"
 #include "../src/clock/layout/epd_layout.h"
@@ -73,25 +73,109 @@ std::string weatherJson(int wmo, bool day) {
 }
 
 const char* kTodoMd =
-    "## Heute\n"
-    "- [ ] Steuererkl\xC3\xA4rung abgeben \xF0\x9F\x93\x85 2026-10-09 \xE2\x8F\xAB\n"
-    "- [ ] Bericht an **Herrn M\xC3\xBCller** senden [[Projekt X|Projekt]] \xF0\x9F\x93\x85 2026-10-12\n"
-    "- [ ] Drehgenehmigung Studio Nord pr\xC3\xBC" "fen \xF0\x9F\x93\x85 2026-10-12\n"
-    "- [ ] Mikrofone laden \xF0\x9F\x93\x85 2026-10-13\n"
-    "- [ ] Rechnung Verleih bezahlen \xF0\x9F\x93\x85 2026-10-16\n"
-    "- [ ] Ein sehr langer Aufgabentext der garantiert nicht in die Spalte passt und gek\xC3\xBCrzt werden muss #privat\n"
-    "- [x] Fotos gesichert\n"
-    "- [ ] Ersatzakku bestellen\n"
-    "- [ ] Neue Kabeltrommel kaufen\n"
-    "- [ ] Lizenz verl\xC3\xA4ngern \xE2\x8F\xB3 2026-10-22\n"
-    "- [ ] Foto-Backup pr\xC3\xBC" "fen\n"
-    "- [ ] Aufgabe elf\n"
-    "- [ ] Aufgabe zw\xC3\xB6lf\n";
+    "---\n"
+    "banner: \"[[DSC_2394.jpg]]\"\n"
+    "banner_position: 26\n"
+    "icon: \xF0\x9F\x93\x8B" "\n"
+    "---\n"
+    "# To-Do\xC2\xB4" "s\n"
+    "\n"
+    "- [ ] Claude exportieren\n"
+    "- [ ] Gitarren neu besaiten\n"
+    "- [ ] Kleiderschrank aufr\xC3\xA4" "umen\n"
+    "- [ ] Teleskop Alt Projekt\n"
+    "- [ ] Linux installieren\n"
+    "- [x] Kabel Andi!!\n"
+    "\n"
+    "- [ ] Datei Backup\n"
+    "- [ ] Passw\xC3\xB6" "rter verbessern\n"
+    "\n"
+    "- [ ] n8n (Automatisierung)\n"
+    "- [ ] Paperless\n"
+    "- [ ] Stirling.pdf\n"
+    "- [ ] Open Webui\n"
+    "- [ ] Invoice ninja\n"
+    "\n"
+    "Mitnehmen\n"
+    "\n"
+    "- Rohr\n"
+    "- Deckel\n"
+    "- Schiene 1\n"
+    "- Schiene 2\n"
+    "- Alte schiene\n"
+    "- Linse\n"
+    "- Flansch\n"
+    "- Koffer 1\n"
+    "- Koffer 2\n"
+    "- Telrad\n"
+    "- Montierung\n"
+    "- EQ-5? \n"
+    "- Stativ\n"
+    "- Filmklappe\n"
+    "- Arc-Play\n"
+    "- MacBook\n"
+    "\n"
+    "## Hobby\n"
+    "\n"
+    "- [ ] Lage der Nation App probieren Direktzahlung\n"
+    "- [ ] Berlin Arc Play fragen\n"
+    "- [ ] Filmbox testen Alexa auf Film\n"
+    "- [ ] Nikon Plakat\n"
+    "\n"
+    "# Projekte\n"
+    " [[Einkaufsliste]]![[projects.base]]\n"
+    "# Notes\n"
+    "![[notes.base]]\n"
+    "\n"
+    "# Resources\n"
+    "![[resources.base]]\n"
+    "\n"
+    "\n"
+    "\n"
+    "## Website Privat\n"
+    "\n"
+    "[Google Search Console](https://search.google.com/search-console?resource_id=sc-domain%3Ajulianprobst.de&after_verification_success=)\n"
+    "\n"
+    "### Portfolio:\n"
+    "\n"
+    "- [ ] <span style=\"color:rgb(112, 48, 160)\">Gottesdienststreaming</span> Corona (Prio 2)\n"
+    "- [ ] <span style=\"color:rgb(112, 48, 160)\">Visitenkarten</span> (Prio 3)\n"
+    "- [ ] Video <span style=\"color:rgb(112, 48, 160)\">Felix</span> (Prio 3)\n"
+    "\n"
+    "`#7a57ed`\n"
+    "\n"
+    "`#221345` (Backfarbe)\n"
+    "\n"
+    "# Merkliste\n"
+    "\n"
+    "- [ ] [Filterwheel](https://www.thingiverse.com/thing:3679901)\n"
+    "- [ ] **Eine Geschichte des Universums in 100 Sterne**!\n"
+    "\n"
+    "# Einweihungsfeier\n"
+    "\n"
+    "Anzahl: 15-20\n"
+    "\n"
+    "**Einkaufsliste:**\n"
+    "- [ ] Tomaten\n"
+    "- [ ] Rotes Pesto\n"
+    "- [ ] Getrocknete Tomaten\n"
+    "- [ ] Mozzarella\n"
+    "- [ ] Kasten Bier (Keller?)\n"
+    "- [ ] Limo (Keller?)\n"
+    "- [ ] Wein 3x wei\xC3\x9F" " 3x rot\n"
+    "- [ ] Kichererbsen \n"
+    "- [ ] Zitrone\n"
+    "- [ ] Aperol?\n"
+    "- [ ] Sekt\n"
+    "- [ ] Orange\n"
+    "\n"
+    "**To-Do:**\n"
+    "- [ ] Lampen\n";
 
 }  // namespace
 
 static clockdata::Data* g_data;
-static void onTask(const Task& t, void*) { if (g_data->taskCount < clockdata::kMaxTasks) g_data->tasks[g_data->taskCount++] = t; }
+static void onDocLine(const DocLine& l, void*) { if (g_data->docCount < kMaxDocLines) g_data->doc[g_data->docCount++] = l; }
 
 int main(int argc, char** argv) {
     const char* out = argc > 1 ? argv[1] : "epd_preview.pgm";
@@ -122,10 +206,9 @@ int main(int argc, char** argv) {
         data->src[clockdata::SRC_CALENDAR].ok = true;
         data->src[clockdata::SRC_CALENDAR].at = now - 60;
 
-        TodoParser tp("Heute", onTask, nullptr);
-        tp.feed(kTodoMd, strlen(kTodoMd));
-        tp.finish();
-        sortTasks(data->tasks, data->taskCount, today);
+        DocParser dp(onDocLine, nullptr);
+        dp.feed(kTodoMd, strlen(kTodoMd));
+        dp.finish();
         data->src[clockdata::SRC_TODO].ok = true;
         data->src[clockdata::SRC_TODO].at = now - 60;
 

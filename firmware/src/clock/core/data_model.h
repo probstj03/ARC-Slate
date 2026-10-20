@@ -1,14 +1,12 @@
 #pragma once
-// The data the clock shows (pure, no Arduino): calendar, to-do list, weather and the state of
+// The data the clock shows (pure, no Arduino): calendar, dashboard document, weather and the state of
 // each source. The store (data_store.cpp) fills it, matrices and e-ink read it.
 #include <stdint.h>
 #include "agenda.h"
-#include "todo.h"
+#include "doc.h"
 #include "weather.h"
 
 namespace clockdata {
-
-constexpr int kMaxTasks = 32;
 
 enum Source : uint8_t { SRC_CALENDAR = 0, SRC_TODO = 1, SRC_WEATHER = 2, SRC_COUNT = 3 };
 
@@ -22,8 +20,8 @@ struct SourceState {
 
 struct Data {
     ac::Agenda agenda;
-    ac::Task tasks[kMaxTasks];
-    int taskCount = 0;
+    ac::DocLine doc[ac::kMaxDocLines];   // the dashboard markdown file, line by line (1:1)
+    int docCount = 0;
     ac::Weather weather;
     SourceState src[SRC_COUNT];
 };

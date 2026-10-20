@@ -11,6 +11,7 @@
 #include "fold.h"
 #include "ics.h"
 #include "moon.h"
+#include "doc.h"
 #include "todo.h"
 #include "weather.h"
 
@@ -262,6 +263,52 @@ static const char* kTodoMd =
     "## Spaeter\n"
     "- [ ] Nur in anderer Sektion\n";
 
+static std::vector<DocLine> g_doc;
+static void collectDoc(const DocLine& l, void*) { g_doc.push_back(l); }
+
+static void testDoc() {
+    const char* md =
+        "---\nbanner: x\nicon: y\n---\n"
+        "# Title\n"
+        "\n"
+        "- [ ] Open task\n"
+        "- [x] Done task\n"
+        "\n"
+        "\n"
+        "Plain text with [[Page|alias]] and [link](https://x.y) and **bold** <span style=\"c\">html</span>\n"
+        "  - nested bullet\n"
+        "## Section\n"
+        "- [ ] Task with umlaut M\xC3\xBCller ^abc123\n"
+        "\n"
+        "# Second heading\n"
+        "\n";
+    g_doc.clear();
+    {
+        DocParser p(collectDoc, nullptr);
+        for (const char* c = md; *c; c++) p.feed(c, 1);                  // byte by byte
+        p.finish();
+    }
+    CHECK(g_doc.size() == 10);                                           // no leading / trailing blank lines
+    if (g_doc.size() == 10) {
+        CHECK(g_doc[0].kind == DocKind::TaskOpen);                       // front matter and the title are left out
+        CHECK_STR(g_doc[0].text, "Open task");
+        CHECK(g_doc[1].kind == DocKind::TaskDone);
+        CHECK_STR(g_doc[1].text, "Done task");
+        CHECK(g_doc[2].kind == DocKind::Blank && g_doc[3].kind == DocKind::Blank);   // blank lines stay
+        CHECK(g_doc[4].kind == DocKind::Text);
+        CHECK_STR(g_doc[4].text, "Plain text with alias and link and bold html");
+        CHECK(g_doc[5].kind == DocKind::Bullet && g_doc[5].indent == 1);
+        CHECK_STR(g_doc[5].text, "nested bullet");
+        CHECK(g_doc[6].kind == DocKind::H2);
+        CHECK_STR(g_doc[6].text, "Section");
+        CHECK(g_doc[7].kind == DocKind::TaskOpen);
+        CHECK_STR(g_doc[7].text, "Task with umlaut M\xFCller");         // Latin-1, block id removed
+        CHECK(g_doc[8].kind == DocKind::Blank);
+        CHECK(g_doc[9].kind == DocKind::H1);                             // a later H1 stays
+        CHECK_STR(g_doc[9].text, "Second heading");
+    }
+}
+
 static void testTodo() {
     g_tasks.clear();
     {
@@ -488,6 +535,7 @@ int main() {
     testFold();
     testMoon();
     testNightEvents();
+    testDoc();
     testCalDav();
     testTodo();
     testAgenda();

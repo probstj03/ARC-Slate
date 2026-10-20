@@ -28,11 +28,10 @@ namespace {
 constexpr uint16_t kBlack = 0x0000, kWhite = 0xFFFF;
 
 constexpr int HEADER_H = 96;
-constexpr int WX_Y = 100, WX_H = 78;      // weather band: it ends flush with the sunrise / sunset line
-constexpr int BODY_Y = WX_Y + WX_H + 4, BODY_BOTTOM = 476;
-constexpr int SEP_X = 440;
-constexpr int BAR_H = 26;                 // black heading bars
-constexpr int ROW_H = 26;                 // dashboard rows
+constexpr int WX_Y = 100, WX_H = 74;      // weather band: the left block ends flush with the sunrise / sunset line
+constexpr int BODY_Y = WX_Y + WX_H + 10, BODY_BOTTOM = 476;
+constexpr int SEP_X = 490;                // calendar | dashboard (the calendar is the wider one)
+constexpr int BAR_H = 28;                 // black heading bars
 
 const GFXfont* const F_SMALL = &Lato10pt;
 const GFXfont* const F_SMALL_B = &LatoBold10pt;
@@ -92,7 +91,7 @@ void printFit(int x, int y, const GFXfont* font, const char* text, int maxW) {
 void headingBar(int x, int y, int w, const char* title) {
     G->fillRect(x, y, w, BAR_H, kBlack);
     G->setTextColor(kWhite);
-    printAt(x + 10, y + 19, F_TEXT_B, title);
+    printAt(x + 10, y + 22, F_TEXT_B, title);
     G->setTextColor(kBlack);
 }
 
@@ -227,33 +226,44 @@ void drawHeader(int64_t now) {
 
 void tempText(char* out, size_t cap, int t10) { snprintf(out, cap, "%d\xB0", (int)lroundf(t10 / 10.0f)); }
 
+// Location pin: a drop with a hole, 14 px wide, 22 px tall; (cx, top) = centre x and top edge.
+void drawPin(int cx, int top) {
+    G->fillCircle(cx, top + 7, 7, kBlack);
+    G->fillTriangle(cx - 6, top + 10, cx + 6, top + 10, cx, top + 22, kBlack);
+    G->fillCircle(cx, top + 7, 3, kWhite);
+}
+
 void drawWeatherBand(int64_t now) {
     const ac::Weather& w = S->weather;
-    // everything on the left ends at the baseline of the sunrise / sunset line (WX_Y + 72)
-    if (opt.place && opt.place[0]) printRight(W - 12, WX_Y + 30, F_HEAD, opt.place);
+    // place with a pin on the right (baseline WX_Y + 24); the left block ends at the baseline of the sunrise / sunset
+    // line (WX_Y + 66)
+    if (opt.place && opt.place[0]) {
+        printRight(W - 12, WX_Y + 24, F_HEAD, opt.place);
+        drawPin(W - 12 - textWidth(F_HEAD, opt.place) - 16, WX_Y + 3);
+    }
     if (!w.valid) {
-        printAt(14, WX_Y + 36, F_TEXT_B, "No weather data");
+        printAt(14, WX_Y + 34, F_TEXT_B, "No weather data");
         const char* err = S->src[clockdata::SRC_WEATHER].error;
-        printFit(14, WX_Y + 62, F_SMALL, err[0] ? err : "not fetched yet", 420);
+        printFit(14, WX_Y + 58, F_SMALL, err[0] ? err : "not fetched yet", 420);
         return;
     }
     const int di = (int)((ac::dayStart(now) - w.day0) / 86400);
     const ac::DayInfo day = (di >= 0 && di < 3) ? w.day[di] : ac::DayInfo();
     const ac::WxKind kind = ac::kindFromWmo(day.wmo);
 
-    drawWeatherIcon(12, WX_Y + 2, kind);
+    drawWeatherIcon(12, WX_Y, kind);
     char hi[12], lo[12], line[64];
     tempText(hi, sizeof(hi), day.tMax10);
     tempText(lo, sizeof(lo), day.tMin10);
-    printAt(104, WX_Y + 44, F_HUGE, hi);
-    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 44, F_BIG, lo);
+    printAt(104, WX_Y + 40, F_HUGE, hi);
+    printAt(104 + textWidth(F_HUGE, hi) + 14, WX_Y + 40, F_BIG, lo);
     snprintf(line, sizeof(line), "%s, rain %u %%", ac::kindName(kind), day.popMax);
-    printFit(104, WX_Y + 72, F_TEXT, line, 330);
+    printFit(104, WX_Y + 66, F_TEXT, line, 330);
 
     if (day.sunrise && day.sunset) {
         const ac::Civil sr = ac::fromSec(day.sunrise), ss = ac::fromSec(day.sunset);
         snprintf(line, sizeof(line), "Sunrise %02d:%02d   Sunset %02d:%02d", sr.hour, sr.minute, ss.hour, ss.minute);
-        printRight(W - 12, WX_Y + 72, F_TEXT, line);
+        printRight(W - 12, WX_Y + 66, F_TEXT, line);
     }
 }
 
@@ -374,16 +384,17 @@ void drawCalendar(int64_t now) {
             const int h = bottom - top;
             G->fillRoundRect(bx, top, lw - 2, h, 3, kBlack);
             G->setTextColor(kWhite);
+            const int avail = lw - 9;                                     // text area of the box
             if (h >= 46 && e.start >= ds && e.end > e.start) {        // room: start - end small above the title
                 const ac::Civil st = ac::fromSec(e.start), en = ac::fromSec(e.end);
-                char a1[8], a2[8], range[20];                               // full hours without ":00": "8-18", "14:30-15:30"
-                if (st.minute) snprintf(a1, sizeof(a1), "%d:%02d", st.hour, st.minute); else snprintf(a1, sizeof(a1), "%d", st.hour);
-                if (en.minute) snprintf(a2, sizeof(a2), "%d:%02d", en.hour, en.minute); else snprintf(a2, sizeof(a2), "%d", en.hour);
-                snprintf(range, sizeof(range), "%s-%s", a1, a2);
-                printFit(bx + 6, top + 19, F_SMALL, range, lw - 12);
-                printFit(bx + 6, top + 39, F_SMALL, e.summary, lw - 12);
+                char range[20];                                       // always spelled out: 15:00-17:00
+                snprintf(range, sizeof(range), "%02d:%02d-%02d:%02d", st.hour, st.minute, en.hour, en.minute);
+                if (textWidth(F_SMALL, range) > avail)                // narrow lane: without the leading zeros, still complete
+                    snprintf(range, sizeof(range), "%d:%02d-%d:%02d", st.hour, st.minute, en.hour, en.minute);
+                printFit(bx + 5, top + 19, F_SMALL, range, avail);
+                printFit(bx + 5, top + 39, F_SMALL, e.summary, avail);
             } else {
-                printFit(bx + 6, top + 20, F_SMALL, e.summary, lw - 12);  // a little room above the title
+                printFit(bx + 5, top + 20, F_SMALL, e.summary, avail);    // a little room above the title
             }
             G->setTextColor(kBlack);
         }
@@ -410,11 +421,21 @@ void drawCalendar(int64_t now) {
     }
 }
 
-// ── dashboard (to-do list): open and ticked tasks in the order of the file / sorted, as the parser delivers them ──
+// ── dashboard: the markdown document 1:1 (blank lines, headings, tasks with boxes / ticks, bullets, text) ──
 
-void drawTodo(int64_t now) {
+int docLineHeight(ac::DocKind k) {
+    switch (k) {
+        case ac::DocKind::Blank: return 10;
+        case ac::DocKind::H1: return 30;
+        case ac::DocKind::H2: return 26;
+        case ac::DocKind::H3: return 24;
+        case ac::DocKind::Rule: return 12;
+        default: return 22;
+    }
+}
+
+void drawDashboard(int64_t) {
     const int x0 = SEP_X + 12, x1 = W - 10;
-    const int64_t today = ac::dayStart(now);
     headingBar(SEP_X, BODY_Y, W - SEP_X, "DASHBOARD");
     if (!S->src[clockdata::SRC_TODO].ok) {
         printAt(x0, BODY_Y + BAR_H + 30, F_TEXT_B, "Dashboard unavailable");
@@ -423,28 +444,51 @@ void drawTodo(int64_t now) {
         return;
     }
     int y = BODY_Y + BAR_H + 6;
-    for (int i = 0; i < S->taskCount; i++) {
-        if (y + ROW_H > epdlayout::H - 2) break;                      // the list simply ends at the bottom edge
-        const ac::Task& t = S->tasks[i];
-        const bool overdue = !t.done && t.hasDate && t.date < today;
-        const bool dueToday = !t.done && t.hasDate && t.date == today;
-        for (int d = 0; d < 2; d++) G->drawRect(x0 + d, y + 4 + d, 16 - 2 * d, 16 - 2 * d, kBlack);
-        if (overdue || dueToday) G->fillRect(x0 + 5, y + 9, 6, 6, kBlack);          // due: filled
-        if (t.done) {                                                               // ticked: a check mark
-            for (int d = 0; d < 3; d++) {
-                G->drawLine(x0 + 3, y + 12 + d, x0 + 6, y + 16 + d, kBlack);
-                G->drawLine(x0 + 6, y + 16 + d, x0 + 15, y + 5 + d, kBlack);
+    for (int i = 0; i < S->docCount; i++) {
+        const ac::DocLine& l = S->doc[i];
+        const int h = docLineHeight(l.kind);
+        if (y + h > epdlayout::H - 2) break;                         // the document simply ends at the bottom edge
+        const int ix = x0 + l.indent * 16;
+        switch (l.kind) {
+            case ac::DocKind::Blank:
+                break;
+            case ac::DocKind::H1:
+                printFit(x0, y + 22, F_TEXT_B, l.text, x1 - x0);
+                break;
+            case ac::DocKind::H2:
+            case ac::DocKind::H3:
+                printFit(x0, y + 19, F_SMALL_B, l.text, x1 - x0);
+                break;
+            case ac::DocKind::Rule:
+                G->fillRect(x0, y + 5, x1 - x0, 2, kBlack);
+                break;
+            case ac::DocKind::TaskOpen:
+            case ac::DocKind::TaskDone: {
+                for (int d = 0; d < 2; d++) G->drawRect(ix + d, y + 3 + d, 16 - 2 * d, 16 - 2 * d, kBlack);
+                const bool done = l.kind == ac::DocKind::TaskDone;
+                if (done) {                                                        // ticked: a check mark
+                    for (int d = 0; d < 3; d++) {
+                        G->drawLine(ix + 3, y + 11 + d, ix + 6, y + 15 + d, kBlack);
+                        G->drawLine(ix + 6, y + 15 + d, ix + 15, y + 4 + d, kBlack);
+                    }
+                }
+                printFit(ix + 24, y + 17, F_SMALL, l.text, x1 - (ix + 24));
+                if (done) {                                                        // and struck through
+                    const int w = textWidth(F_SMALL, l.text);
+                    G->fillRect(ix + 24, y + 10, min(w, x1 - (ix + 24)), 2, kBlack);
+                }
+                break;
             }
+            case ac::DocKind::Bullet:
+                G->fillCircle(ix + 7, y + 11, 2, kBlack);
+                printFit(ix + 18, y + 17, F_SMALL, l.text, x1 - (ix + 18));
+                break;
+            default:
+                printFit(ix, y + 17, F_SMALL, l.text, x1 - ix);
+                break;
         }
-        const GFXfont* f = (!t.done && (t.priority >= 2 || overdue || dueToday)) ? F_SMALL_B : F_SMALL;
-        printFit(x0 + 26, y + 18, f, t.text, x1 - (x0 + 26));
-        if (t.done) {                                                               // and struck through
-            const int w = textWidth(f, t.text);
-            G->fillRect(x0 + 26, y + 11, min(w, x1 - (x0 + 26)), 2, kBlack);
-        }
-        y += ROW_H;
+        y += h;
     }
-    if (S->taskCount == 0) printAt(x0 + 26, y + 18, F_SMALL, "All done");
 }
 
 }  // namespace
@@ -460,7 +504,7 @@ void draw(Adafruit_GFX& g, const clockdata::Data& snap, int64_t now, const Optio
     drawWeatherBand(now);
     drawCalendar(now);
     G->fillRect(SEP_X - 6, BODY_Y, 4, BODY_BOTTOM - BODY_Y + 4, kBlack);
-    drawTodo(now);
+    drawDashboard(now);
 }
 
 bool hasNightEvents(const clockdata::Data& snap, int64_t now) {

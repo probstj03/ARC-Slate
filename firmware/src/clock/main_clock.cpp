@@ -106,7 +106,7 @@ void printHelp() {
         "  nc url URL | nc user ID | nc login NAME|- | nc pass APP-PASSWORT | nc insecure 0|1\n"
         "                      (ID = Benutzer-ID fuer die Pfade, z. B. Admin; login = Anmeldename des App-Passworts, z. B. E-Mail)\n"
         "  cal add PFAD | cal clear      CalDAV-Pfad (z. B. /remote.php/dav/calendars/julian/personal/)\n"
-        "  todo path DATEI | todo head UEBERSCHRIFT | todo head -\n"
+        "  todo path DATEI     Markdown-Datei fuers Dashboard (1:1, ohne Front Matter und erste Ueberschrift)\n"
         "  loc LAT LON [ORT] | loc auto   Standort fuer das Wetter (auto: aus der oeffentlichen IP)\n"
         "  fetch [cal|todo|wx|all]   Daten jetzt abrufen und anzeigen\n"
         "  epd                 E-Ink jetzt aktualisieren (sonst nur bei Aenderungen, Pruefung alle 15 min)\n"
@@ -132,7 +132,7 @@ void printStatus() {
     for (int i = 0; i < clockdata::SRC_COUNT; i++)
         Serial.printf("  %-8s %s  Stand vor %s  %s\n", clockdata::sourceName((clockdata::Source)i), d.src[i].ok ? "ok    " : "FEHLT ",
                       age(d.src[i].at).c_str(), d.src[i].error);
-    Serial.printf("  %d Termine, %d Aufgaben, Wetter %s\n", d.agenda.n, d.taskCount, d.weather.valid ? "da" : "fehlt");
+    Serial.printf("  %d Termine, %d Dashboard-Zeilen, Wetter %s\n", d.agenda.n, d.docCount, d.weather.valid ? "da" : "fehlt");
     clockdata::unlock();
     Serial.println(epdclock::statusLine());
     Serial.printf("Heap frei %lu, PSRAM frei %lu\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram());

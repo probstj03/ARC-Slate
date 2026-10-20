@@ -91,7 +91,7 @@ void saveState() {
 
 // Refreshes the panel with the snapshot. Returns false if the panel did not refresh.
 bool refreshNow(int64_t now, uint32_t hash, const char* why) {
-    Serial.printf("[EPD] Aktualisierung (%s): %u Termine, %d Aufgaben, Wetter %s\n", why, (unsigned)s_snap->agenda.n, s_snap->taskCount,
+    Serial.printf("[EPD] Aktualisierung (%s): %u Termine, %d Dashboard-Zeilen, Wetter %s\n", why, (unsigned)s_snap->agenda.n, s_snap->docCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
     // The radio's modem sleep wakes up in bursts that disturbed the long SPI wires (rows of the picture shifted by

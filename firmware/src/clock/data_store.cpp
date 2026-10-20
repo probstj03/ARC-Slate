@@ -13,7 +13,7 @@ namespace clockdata {
 namespace {
 
 constexpr uint32_t kCacheMagic = 0x41434348;   // "ACCH"
-constexpr uint16_t kCacheVersion = 1;
+constexpr uint16_t kCacheVersion = 2;
 constexpr const char* kCachePath = "/clock_cache.bin";
 
 Data s_data;
@@ -23,8 +23,8 @@ String s_todoEtag;
 
 // staging areas (static: too big for the task stack)
 ac::Agenda s_calStage;
-ac::Task s_todoStage[kMaxTasks];
-int s_todoStageN = 0;
+ac::DocLine s_docStage[ac::kMaxDocLines];
+int s_docStageN = 0;
 
 volatile uint32_t s_requestMask = 0;
 uint32_t s_attempts[SRC_COUNT] = {0, 0, 0};
@@ -289,13 +289,13 @@ bool fetchCalendar(Print* log) {
     return true;
 }
 
-// ── to-do ────────────────────────────────────────────────────────────────
+// ── dashboard document (markdown on the Nextcloud, shown 1:1) ────────────
 
-void onTask(const ac::Task& t, void*) {
-    if (s_todoStageN < kMaxTasks) s_todoStage[s_todoStageN++] = t;
+void onDocLine(const ac::DocLine& l, void*) {
+    if (s_docStageN < ac::kMaxDocLines) s_docStage[s_docStageN++] = l;
 }
 
-void feedTodo(const uint8_t* d, size_t n, void* c) { ((ac::TodoParser*)c)->feed((const char*)d, n); }
+void feedDoc(const uint8_t* d, size_t n, void* c) { ((ac::DocParser*)c)->feed((const char*)d, n); }
 
 bool fetchTodo(Print* log) {
     const ClockConfig cfg = clockcfg::copy();
@@ -309,9 +309,9 @@ bool fetchTodo(Print* log) {
     xSemaphoreGive(s_mtx);
     if (have && s_todoEtag.length()) req.ifNoneMatch = s_todoEtag;
 
-    s_todoStageN = 0;
-    ac::TodoParser parser(cfg.todoHeading.c_str(), onTask, nullptr);
-    const clockhttp::Result r = clockhttp::perform(req, feedTodo, &parser);
+    s_docStageN = 0;
+    ac::DocParser parser(onDocLine, nullptr);
+    const clockhttp::Result r = clockhttp::perform(req, feedDoc, &parser);
     parser.finish();
 
     if (r.status == 304) {
@@ -319,21 +319,20 @@ bool fetchTodo(Print* log) {
         s_data.src[SRC_TODO].at = s_data.src[SRC_TODO].tried = nowLocal();
         s_data.src[SRC_TODO].error[0] = 0;
         xSemaphoreGive(s_mtx);
-        if (log) log->println("To-Do: unveraendert (304)");
+        if (log) log->println("Dashboard: unveraendert (304)");
         return true;
     }
     if (r.status != 200) {
         markFailure(SRC_TODO, statusText(r.status, r.error));
-        if (log) log->printf("To-Do: FEHLER %s (%s)\n", s_data.src[SRC_TODO].error, req.url.c_str());
+        if (log) log->printf("Dashboard: FEHLER %s (%s)\n", s_data.src[SRC_TODO].error, req.url.c_str());
         return false;
     }
-    ac::sortTasks(s_todoStage, s_todoStageN, ac::dayStart(nowLocal()));
     xSemaphoreTake(s_mtx, portMAX_DELAY);
-    bool changed = s_data.taskCount != s_todoStageN;
-    for (int i = 0; i < s_todoStageN && !changed; i++)
-        changed = strcmp(s_data.tasks[i].text, s_todoStage[i].text) != 0 || s_data.tasks[i].date != s_todoStage[i].date;
-    for (int i = 0; i < s_todoStageN; i++) s_data.tasks[i] = s_todoStage[i];
-    s_data.taskCount = s_todoStageN;
+    bool changed = s_data.docCount != s_docStageN;
+    for (int i = 0; i < s_docStageN && !changed; i++)
+        changed = memcmp(&s_data.doc[i], &s_docStage[i], sizeof(ac::DocLine)) != 0;
+    for (int i = 0; i < s_docStageN; i++) s_data.doc[i] = s_docStage[i];
+    s_data.docCount = s_docStageN;
     SourceState& st = s_data.src[SRC_TODO];
     st.ok = true;
     st.at = st.tried = nowLocal();
@@ -343,12 +342,10 @@ bool fetchTodo(Print* log) {
     s_todoEtag = r.etag;
     saveCacheThrottled();
     if (log) {
-        log->printf("To-Do: %d offene Aufgaben\n", s_todoStageN);
-        for (int i = 0; i < s_todoStageN && i < 12; i++) {
-            const ac::Civil c = ac::fromSec(s_todoStage[i].date);
-            if (s_todoStage[i].hasDate) log->printf("  %02d.%02d.  %s%s\n", c.day, c.month, s_todoStage[i].overdueFlag ? "! " : "", s_todoStage[i].text);
-            else log->printf("         %s\n", s_todoStage[i].text);
-        }
+        log->printf("Dashboard: %d Zeilen\n", s_docStageN);
+        static const char* const kMark[] = {"  ", "# ", "##", "##", "[ ]", "[x]", " - ", "   ", "--"};
+        for (int i = 0; i < s_docStageN && i < 14; i++)
+            log->printf("  %s %s\n", kMark[(int)s_docStage[i].kind], s_docStage[i].text);
     }
     return true;
 }
