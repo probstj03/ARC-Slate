@@ -126,7 +126,24 @@ void loadCache() {
     f.close();
 }
 
+bool s_cacheComplete = false;               // the cache holds every configured source (written once per start)
+
 void saveCacheThrottled() {
+    // Right after the first complete fetch round the cache is written at once, so that a start with a slow network
+    // still finds weather, dashboard and calendar in it; afterwards at most every 5 minutes.
+    if (!s_cacheComplete) {
+        const ClockConfig cfg = clockcfg::copy();
+        bool all = true;
+        xSemaphoreTake(s_mtx, portMAX_DELAY);
+        for (int i = 0; i < SRC_COUNT; i++)
+            if (enabled((Source)i, cfg) && !s_data.src[i].ok) all = false;
+        xSemaphoreGive(s_mtx);
+        if (all) {
+            s_cacheComplete = true;
+            saveCache();
+            return;
+        }
+    }
     if (s_lastCacheSave == 0 || millis() - s_lastCacheSave > 5 * 60000UL) saveCache();
 }
 

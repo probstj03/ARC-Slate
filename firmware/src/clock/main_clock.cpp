@@ -231,10 +231,17 @@ void handleSerial() {
     else if (cmd == "nc" || cmd == "cal" || cmd == "todo" || cmd == "loc" || cmd == "epdtime" || cmd == "bright" || cmd == "idle" ||
              cmd == "remind" || cmd == "flash" || cmd == "every") handleConfig(cmd, arg);
     else if (cmd == "fetch") {
-        using clockdata::Source;
-        if (arg.isEmpty() || arg == "all" || arg == "cal") clockdata::fetchNowVerbose(clockdata::SRC_CALENDAR, Serial);
-        if (arg.isEmpty() || arg == "all" || arg == "todo") clockdata::fetchNowVerbose(clockdata::SRC_TODO, Serial);
-        if (arg.isEmpty() || arg == "all" || arg == "wx") clockdata::fetchNowVerbose(clockdata::SRC_WEATHER, Serial);
+        String what = arg;
+        what.trim();
+        what.toLowerCase();
+        const bool all = what.isEmpty() || what == "all" || what == "alle";
+        const bool cal = what == "cal" || what == "calendar" || what == "kalender" || what == "events" || what == "termine";
+        const bool todo = what == "todo" || what == "dashboard" || what == "doc" || what == "aufgaben";
+        const bool wx = what == "wx" || what == "weather" || what == "wetter";
+        if (!(all || cal || todo || wx)) Serial.println("fetch [cal|todo|wx|all]   (auch: calendar, dashboard, weather, wetter)");
+        if (all || cal) clockdata::fetchNowVerbose(clockdata::SRC_CALENDAR, Serial);
+        if (all || todo) clockdata::fetchNowVerbose(clockdata::SRC_TODO, Serial);
+        if (all || wx) clockdata::fetchNowVerbose(clockdata::SRC_WEATHER, Serial);
     }
     else if (cmd == "epd") epdclock::request(arg == "force");
     else if (cmd == "wifi") {

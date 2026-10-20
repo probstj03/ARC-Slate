@@ -74,14 +74,19 @@ void pictureZones(int64_t now, uint32_t out[ZONES]) {
     for (int z = 0; z < ZONES; z++) out[z] = h.zone[z] ? h.zone[z] : 1;
 }
 
-// Draws the whole frame into the buffer and sends it: all of it (window = nullptr) or only the window (partial refresh).
-bool drawFrame(int64_t now, const epdlayout::Rect* window) {
+// Draws the whole frame into the buffer and sends it: all of it (nWindows = 0) or window by window (partial refreshes).
+bool drawFrame(int64_t now, const epdlayout::Rect* windows, int nWindows) {
     String place;
     const epdlayout::Options opt = options(place);
     spibus::lock();
     d.setFullWindow();
     epdlayout::draw(d, *s_snap, now, opt);
-    const bool ok = window ? epddrv::refreshWindow(window->x, window->y, window->w, window->h) : epddrv::refreshFull();
+    bool ok = true;
+    if (nWindows > 0) {
+        for (int i = 0; i < nWindows && ok; i++) ok = epddrv::refreshWindow(windows[i].x, windows[i].y, windows[i].w, windows[i].h);
+    } else {
+        ok = epddrv::refreshFull();
+    }
     spibus::unlock();
     return ok;
 }
@@ -93,19 +98,21 @@ epdlayout::Rect alignX(epdlayout::Rect r) {         // the panel takes windows o
     return r;
 }
 
-// A small change (one or two zones, together at most 45 % of the picture) is refreshed partially; the daily refresh,
-// the first one after a start and every PARTIALS_BEFORE_FULL-th one are full ones (ghosting).
-bool partialWindow(uint32_t mask, bool daily, epdlayout::Rect& out) {
-    if (daily || !s_panelValid || s_partials >= PARTIALS_BEFORE_FULL) return false;
-    int x0 = epdlayout::W, y0 = epdlayout::H, x1 = 0, y1 = 0;
+// Small changes are refreshed zone by zone, partially (one window per changed zone, so two far apart zones do not
+// become one big window). The daily refresh, the first one after a start, big changes (more than 65 % of the picture)
+// and every PARTIALS_BEFORE_FULL-th window are full refreshes (ghosting).
+int partialWindows(uint32_t mask, bool daily, epdlayout::Rect out[ZONES]) {
+    if (daily || !s_panelValid) return 0;
+    int n = 0;
+    long area = 0;
     for (int z = 0; z < ZONES; z++) {
         if (!(mask & (1u << z))) continue;
-        const epdlayout::Rect q = epdlayout::zoneRect(z);
-        x0 = min(x0, q.x); y0 = min(y0, q.y); x1 = max(x1, q.x + q.w); y1 = max(y1, q.y + q.h);
+        out[n] = alignX(epdlayout::zoneRect(z));
+        area += (long)out[n].w * out[n].h;
+        n++;
     }
-    if ((long)(x1 - x0) * (y1 - y0) > (long)epdlayout::W * epdlayout::H * 45 / 100) return false;
-    out = alignX({x0, y0, x1 - x0, y1 - y0});
-    return true;
+    if (s_partials + n > PARTIALS_BEFORE_FULL || area > (long)epdlayout::W * epdlayout::H * 65 / 100) return 0;
+    return n;
 }
 
 void saveState() {
@@ -115,14 +122,14 @@ void saveState() {
 }
 
 // Refreshes the panel with the snapshot. Returns false if the panel did not refresh.
-bool refreshNow(int64_t now, const uint32_t zones[ZONES], const epdlayout::Rect* window, const char* why) {
-    Serial.printf("[EPD] Aktualisierung (%s%s): %u Termine, %d Dashboard-Zeilen, Wetter %s\n", why, window ? ", teilweise" : "", (unsigned)s_snap->agenda.n, s_snap->docCount,
+bool refreshNow(int64_t now, const uint32_t zones[ZONES], const epdlayout::Rect* windows, int nWindows, const char* why) {
+    Serial.printf("[EPD] Aktualisierung (%s%s): %u Termine, %d Dashboard-Zeilen, Wetter %s\n", why, nWindows ? ", teilweise" : "", (unsigned)s_snap->agenda.n, s_snap->docCount,
                   s_snap->weather.valid ? "ok" : "fehlt");
     const uint32_t t0 = millis();
     // The radio's modem sleep wakes up in bursts that disturbed the long SPI wires (rows of the picture shifted by
     // a few pixels): the radio stays awake while the frame is sent and the panel refreshes.
     WiFi.setSleep(false);
-    const bool drawn = drawFrame(now, window);
+    const bool drawn = drawFrame(now, windows, nWindows);
     WiFi.setSleep(true);
     if (!drawn) {
         Serial.println("[EPD] Aktualisierung fehlgeschlagen, neuer Versuch bei der naechsten Pruefung");
@@ -131,7 +138,7 @@ bool refreshNow(int64_t now, const uint32_t zones[ZONES], const epdlayout::Rect*
         return false;
     }
     for (int z = 0; z < ZONES; z++) s_zone[z] = zones[z];
-    if (window) s_partials++;
+    if (nWindows) s_partials += nWindows;
     else { s_partials = 0; s_panelValid = true; }
     s_lastRefreshSec = now;
     s_refreshCount++;
@@ -156,7 +163,7 @@ void epdTask(void*) {
                 const epdlayout::Rect r = alignX(epdlayout::zoneRect(epdlayout::ZONE_DASHBOARD));
                 const uint32_t t0 = millis();
                 WiFi.setSleep(false);
-                const bool ok = drawFrame(nowSec(), &r);
+                const bool ok = drawFrame(nowSec(), &r, 1);
                 WiFi.setSleep(true);
                 Serial.printf("[EPD] epdpart: Bereich %dx%d bei %d,%d in %lu ms %s\n", r.w, r.h, r.x, r.y,
                               (unsigned long)(millis() - t0), ok ? "ok" : "FEHLGESCHLAGEN");
@@ -192,7 +199,7 @@ void epdTask(void*) {
         s_checkCount++;
 
         if (!bootDone || requested) {
-            refreshNow(now, zh, nullptr, !bootDone ? "Start" : "Befehl");
+            refreshNow(now, zh, nullptr, 0, !bootDone ? "Start" : "Befehl");
             bootDone = true;
             continue;
         }
@@ -215,18 +222,18 @@ void epdTask(void*) {
             continue;
         }
         s_quietLogged = false;
-        // A change. A full refresh (black/white flashing) waits with the lid open, but not forever; a partial one is
-        // hardly noticeable and is drawn at once.
-        epdlayout::Rect win = {0, 0, 0, 0};
-        const bool part = partialWindow(mask, daily, win);
-        if (!part && lid::open()) {
+        // A change. A full refresh (black/white flashing) waits with the lid open, but not forever; partial ones are
+        // hardly noticeable and are drawn at once, zone by zone.
+        epdlayout::Rect wins[ZONES];
+        const int nWins = partialWindows(mask, daily, wins);
+        if (nWins == 0 && lid::open()) {
             if (!s_pendingSince) s_pendingSince = now;
             if (now - s_pendingSince < LID_DEFER_MAX_SEC) {
                 Serial.println("[EPD] Aenderung erkannt - der volle Refresh wartet bis die Klappe zu ist");
                 continue;
             }
         }
-        refreshNow(now, zh, part ? &win : nullptr, daily ? "taeglich" : "Aenderung");
+        refreshNow(now, zh, wins, nWins, daily ? "taeglich" : "Aenderung");
     }
 }
 
